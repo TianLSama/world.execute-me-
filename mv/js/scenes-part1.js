@@ -42,6 +42,36 @@ window.MV = window.MV || {};
       { k: 'SIMULATION', v: 'READY', t: pm['SIMULATION'] || 13.9 }
     ];
 
+    /* ===== ENRICH:boot:data —— 预生成数据表（draw 内零分配） ===== */
+    var COLX = [48, 1872];
+    var COL_HEX = [], COL_CNT = [], COL_SPD = [];
+    for (var ci0 = 0; ci0 < 64; ci0++) {
+      COL_HEX.push(MV.hex(Math.floor(MV.hash(ci0 * 3.77 + 1.3) * 0xfffff), 5));
+      COL_CNT.push('T-' + ('0000' + Math.floor(MV.hash(ci0 * 5.31 + 9.1) * 9999)).slice(-4));
+      COL_SPD.push(0.5 + MV.hash(ci0 * 11.7 + 4.2) * 1.4);
+    }
+    var LED_ORDER = [];
+    for (var lo0 = 0; lo0 < 24; lo0++) LED_ORDER.push(lo0);
+    LED_ORDER.sort(function (a, b) { return MV.hash(a * 1.7 + 0.3) - MV.hash(b * 1.7 + 0.3); });
+    var LIT_STR = [];
+    for (var ls0 = 0; ls0 <= 24; ls0++) LIT_STR.push('LIT ' + ('00' + ls0).slice(-2) + '/24');
+    var CUBE_V = [
+      [-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1],
+      [-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]
+    ];
+    var CUBE_E = [0, 1, 1, 2, 2, 3, 3, 0, 4, 5, 5, 6, 6, 7, 7, 4, 0, 4, 1, 5, 2, 6, 3, 7];
+    var CUBE_PX = new Float32Array(8), CUBE_PY = new Float32Array(8);
+    var LAD = [];
+    for (var ld0 = 0; ld0 < 14; ld0++) {
+      LAD.push({
+        s: '0x' + MV.hex(Math.floor(MV.hash(ld0 * 9.13 + 3.3) * 0xffffff), 6),
+        o: MV.hash(ld0 * 4.71 + 1.1) * 260,
+        x: MV.CX + MV.hashS(ld0 * 6.07 + 8.8) * 96
+      });
+    }
+    var YS = [];
+    for (var ys0 = 0; ys0 <= 1080; ys0 += 4) YS.push('Y=' + ('0000' + ys0).slice(-4));
+
     return {
       meta: meta,
       enter: function () {
@@ -255,6 +285,234 @@ window.MV = window.MV || {};
         if (pl > 0 && pl < 1) {
           MV.ring(ctx, MV.W - 4, MV.CY, 6 + (1 - pl) * 18, MV.C.cyan, 2, (1 - pl) * 0.5);
         }
+
+        /* ============================================================
+         * ENRICH:boot:hexcols —— 两侧十六进制滚动列（1.0s 起）
+         * ============================================================ */
+        var cg2 = MV.clamp((lt - 1.0) / 1.4, 0, 1);
+        if (cg2 > 0.01) {
+          var hDrift = (lt - 1.0) * 13 + env.high * 26;
+          var rowH = 26;
+          ctx.save();
+          ctx.font = '13px ' + MV.FONT_MONO;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          for (var col = 0; col < 2; col++) {
+            var colX = COLX[col];
+            ctx.globalAlpha = 0.10 * cg2;
+            for (var row = 0; row < 42; row++) {
+              var yRow = row * rowH - (hDrift % rowH);
+              var si = (row + Math.floor(hDrift / rowH) * (col ? 3 : 1) + col * 29) % 64;
+              ctx.fillStyle = MV.hash(row * 2.3 + col * 11.1) < 0.22 ? MV.C.cyan : MV.C.dim;
+              if (row % 2 === 0) ctx.fillText(COL_HEX[si], colX, yRow);
+              else ctx.fillText(COL_CNT[(si + col * 7) % 64], colX, yRow);
+              if (row % 4 === 1) ctx.fillRect(colX + (col ? 18 : -26), yRow - 1, 8, 1.2);
+            }
+          }
+          ctx.restore();
+        }
+
+        /* ============================================================
+         * ENRICH:boot:ledmatrix —— 右下 6x4 状态灯阵（1.0s 起）
+         * ============================================================ */
+        var lg2 = MV.clamp((lt - 1.0) / 1.5, 0, 1);
+        if (lg2 > 0.01) {
+          var litN = Math.floor(MV.clamp((lt - 1.0) / 13.5, 0, 1) * 24 + 0.001);
+          var cellW = 22, cellH = 22, gap2 = 10;
+          var gx2 = 1872 - 4 * cellW - 3 * gap2;
+          var gy2 = 852;
+          ctx.save();
+          for (var r2 = 0; r2 < 6; r2++) {
+            for (var c2 = 0; c2 < 4; c2++) {
+              var cell = r2 * 4 + c2;
+              var on = LED_ORDER[cell] < litN;
+              var blink = MV.hash2(r2 * 7 + c2, beat.barIndex);
+              var xx2 = gx2 + c2 * (cellW + gap2);
+              var yy2 = gy2 + r2 * (cellH + gap2);
+              if (on && blink < 0.72) {
+                ctx.globalAlpha = (0.20 + beat.pulse * 0.28 + MV.hash(cell * 2.9) * 0.08) * lg2;
+                ctx.fillStyle = blink < 0.16 ? MV.C.pink : MV.C.cyan;
+                ctx.fillRect(xx2, yy2, cellW, cellH);
+              } else {
+                ctx.globalAlpha = 0.09 * lg2;
+                ctx.strokeStyle = MV.C.dim;
+                ctx.lineWidth = 1;
+                ctx.strokeRect(xx2, yy2, cellW, cellH);
+              }
+            }
+          }
+          ctx.globalAlpha = 0.34 * lg2;
+          ctx.fillStyle = MV.C.dim;
+          ctx.font = '12px ' + MV.FONT_MONO;
+          ctx.textAlign = 'right';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('STATUS', gx2 - 14, gy2 + 8);
+          ctx.fillText(LIT_STR[litN], gx2 - 14, gy2 + 30);
+          ctx.restore();
+        }
+
+        /* ============================================================
+         * ENRICH:boot:assembly —— 线框实体生长（6.38s）+ 线框行星（13.89s）
+         * ============================================================ */
+        var asA = MV.clamp((lt - 6.38) / 0.6, 0, 1);
+        if (asA > 0.01) {
+          var asX = 300, asY = 745, asS = 62;
+          var asAy = 0, asAx = 0.42;
+          var cubeOn = lt >= 9.2;
+          if (cubeOn) asAy = (lt - 9.2) * 0.5;
+          for (var j2 = 0; j2 < 8; j2++) {
+            var vv = CUBE_V[j2];
+            var cyaw = Math.cos(asAy), syaw = Math.sin(asAy);
+            var vx1 = vv[0] * cyaw + vv[2] * syaw;
+            var vz1 = -vv[0] * syaw + vv[2] * cyaw;
+            var cpit = Math.cos(asAx), spit = Math.sin(asAx);
+            var vy2 = vv[1] * cpit - vz1 * spit;
+            var pers = 1 / (1 + (vv[1] * spit + vz1 * cpit) * 0.16);
+            CUBE_PX[j2] = asX + vx1 * asS * pers;
+            CUBE_PY[j2] = asY + vy2 * asS * pers;
+          }
+          ctx.save();
+          ctx.lineWidth = 1.6;
+          ctx.lineCap = 'round';
+          ctx.strokeStyle = MV.C.cyan;
+          if (lt < 7.08) {
+            var pk = MV.easeOutBack(MV.clamp((lt - 6.38) / 0.5, 0, 1));
+            ctx.globalAlpha = 0.5 * pk;
+            ctx.fillStyle = MV.C.white;
+            ctx.fillRect(asX - 2.5, asY - 2.5, 5, 5);
+            MV.cross(ctx, asX, asY, 10 + 18 * pk, MV.C.cyan, 0.3 * pk, 1);
+          } else if (lt < 7.78) {
+            var lp = MV.clamp((lt - 7.08) / 0.7, 0, 1);
+            ctx.globalAlpha = 0.5;
+            ctx.beginPath();
+            ctx.moveTo(CUBE_PX[0], CUBE_PY[0]);
+            ctx.lineTo(MV.lerp(CUBE_PX[0], CUBE_PX[1], lp), MV.lerp(CUBE_PY[0], CUBE_PY[1], lp));
+            ctx.stroke();
+          } else if (lt < 8.48) {
+            var tp = MV.clamp((lt - 7.78) / 0.7, 0, 1);
+            ctx.globalAlpha = 0.5;
+            ctx.beginPath();
+            for (var j3 = 0; j3 < 3; j3++) {
+              var e0 = j3, e1 = (j3 + 1) % 3;
+              var ek = MV.clamp(tp * 3 - j3, 0, 1);
+              ctx.moveTo(CUBE_PX[e0], CUBE_PY[e0]);
+              ctx.lineTo(MV.lerp(CUBE_PX[e0], CUBE_PX[e1], ek), MV.lerp(CUBE_PY[e0], CUBE_PY[e1], ek));
+            }
+            ctx.stroke();
+          } else {
+            var cpr = MV.clamp((lt - 8.48) / 0.72, 0, 1);
+            ctx.globalAlpha = cubeOn ? 0.26 : 0.5;
+            ctx.beginPath();
+            for (var j4 = 0; j4 < 12; j4++) {
+              var a0 = CUBE_E[j4 * 2], b0 = CUBE_E[j4 * 2 + 1];
+              var ek2 = cubeOn ? 1 : MV.clamp(cpr * 12 - j4, 0, 1);
+              if (ek2 <= 0) continue;
+              ctx.moveTo(CUBE_PX[a0], CUBE_PY[a0]);
+              ctx.lineTo(MV.lerp(CUBE_PX[a0], CUBE_PX[b0], ek2), MV.lerp(CUBE_PY[a0], CUBE_PY[b0], ek2));
+            }
+            ctx.stroke();
+            ctx.globalAlpha = 0.34;
+            ctx.fillStyle = MV.C.cyan;
+            for (var j5 = 0; j5 < 8; j5++) ctx.fillRect(CUBE_PX[j5] - 1.4, CUBE_PY[j5] - 1.4, 2.8, 2.8);
+          }
+          ctx.globalAlpha = 0.4 * asA;
+          ctx.fillStyle = MV.C.dim;
+          ctx.font = '14px ' + MV.FONT_MONO;
+          ctx.textAlign = 'center';
+          ctx.fillText(lt < 7.08 ? 'P 01/04 POINT' : lt < 7.78 ? 'P 02/04 LINE' : lt < 8.48 ? 'P 03/04 TRIANGLE' : 'P 04/04 CUBE', asX, asY + 132);
+          ctx.restore();
+        }
+        var pn = MV.clamp((lt - 13.89) / 0.9, 0, 1);
+        if (pn > 0.01) {
+          var pnx = 1640, pny = 800, pnr = 78 * MV.easeOutBack(pn);
+          ctx.save();
+          ctx.strokeStyle = MV.C.cyan;
+          ctx.lineWidth = 1.3;
+          ctx.globalAlpha = 0.30 * pn;
+          ctx.beginPath(); ctx.arc(pnx, pny, pnr, 0, TAU); ctx.stroke();
+          ctx.globalAlpha = 0.20 * pn;
+          for (var j6 = -2; j6 <= 2; j6++) {
+            if (j6 === 0) continue;
+            var latR = pnr * Math.sqrt(1 - (j6 / 3) * (j6 / 3));
+            ctx.beginPath();
+            ctx.ellipse(pnx, pny + j6 * pnr * 0.33, latR, pnr * 0.16, 0, 0, TAU);
+            ctx.stroke();
+          }
+          ctx.globalAlpha = 0.22 * pn;
+          for (var j7 = 0; j7 < 4; j7++) {
+            var lonW = pnr * Math.cos(j7 * Math.PI / 4);
+            ctx.beginPath();
+            ctx.ellipse(pnx, pny, Math.abs(lonW), pnr, 0, 0, TAU);
+            ctx.stroke();
+          }
+          ctx.globalAlpha = 0.26 * pn;
+          ctx.beginPath();
+          ctx.ellipse(pnx, pny, pnr * 1.75, pnr * 0.52, -0.42 + Math.sin(lt * 0.15) * 0.04, 0, TAU);
+          ctx.stroke();
+          ctx.globalAlpha = 0.4 * pn;
+          ctx.fillStyle = MV.C.dim;
+          ctx.font = '14px ' + MV.FONT_MONO;
+          ctx.textAlign = 'center';
+          ctx.fillText('PLANET U-04', pnx, pny + pnr + 40);
+          ctx.restore();
+        }
+
+        /* ============================================================
+         * ENRICH:boot:ladder —— 底部上升十六进制地址梯（10.5-15.65s）
+         * ============================================================ */
+        var lad = MV.clamp((lt - 10.5) / 0.8, 0, 1);
+        if (lad > 0.01) {
+          ctx.save();
+          ctx.font = '14px ' + MV.FONT_MONO;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          for (var ldI = 0; ldI < 14; ldI++) {
+            var it = LAD[ldI];
+            var ly2 = 1040 - (((lt - 10.5) * 36 + it.o) % 300);
+            var la2 = MV.clamp((ly2 - 740) / 300, 0, 1);
+            if (la2 <= 0.01) continue;
+            ctx.globalAlpha = 0.22 * lad * la2;
+            ctx.fillStyle = ldI % 3 === 0 ? MV.C.cyan : MV.C.dim;
+            ctx.fillText(it.s, it.x, ly2);
+            ctx.fillRect(it.x - 60, ly2 + 8, 120 * la2, 1);
+          }
+          ctx.restore();
+        }
+
+        /* ============================================================
+         * ENRICH:boot:sweep —— 蓝图扫描条读数 + 全屏 CRT 扫描线
+         * ============================================================ */
+        var sw = MV.clamp((lt - 4.5) / 0.9, 0, 1);
+        if (sw > 0.01) {
+          var swP = ((lt - 4.5) % 4) / 4;
+          var swY = swP * MV.H;
+          var swI = MV.clamp(Math.round(swY / 4), 0, 270);
+          ctx.save();
+          ctx.strokeStyle = MV.C.cyan;
+          ctx.lineWidth = 1;
+          ctx.globalAlpha = 0.15 * sw;
+          ctx.beginPath(); ctx.moveTo(0, swY); ctx.lineTo(MV.W, swY); ctx.stroke();
+          ctx.globalAlpha = 0.09 * sw;
+          ctx.beginPath(); ctx.moveTo(0, swY - 6); ctx.lineTo(MV.W, swY - 6); ctx.stroke();
+          ctx.font = '13px ' + MV.FONT_MONO;
+          ctx.textAlign = 'right';
+          ctx.textBaseline = 'middle';
+          ctx.globalAlpha = 0.34 * sw;
+          ctx.fillStyle = MV.C.cyan;
+          ctx.fillText(YS[swI], MV.W - 96, swY - 14);
+          ctx.restore();
+        }
+        var crt2 = MV.clamp((lt - 5.0) / 0.6, 0, 1);
+        if (crt2 > 0.01) {
+          var crtY = ((lt - 5.0) % 1.5) / 1.5 * MV.H;
+          ctx.save();
+          ctx.fillStyle = MV.C.white;
+          ctx.globalAlpha = 0.06 * crt2;
+          ctx.fillRect(0, crtY, MV.W, 1.5);
+          ctx.globalAlpha = 0.025 * crt2;
+          ctx.fillRect(0, crtY - 26, MV.W, 26);
+          ctx.restore();
+        }
       }
     };
   });
@@ -267,6 +525,56 @@ window.MV = window.MV || {};
     var meta = { stars: 0.75, grid: 0.05 };
     var rings = [];
     var lastBeat = -1;
+
+    /* ===== ENRICH:awake:data —— 预计算（draw 内零分配） ===== */
+    var SPEC_N = 24;
+    var SPEC_BAND = new Int8Array(SPEC_N);
+    var SPEC_VAR = new Float32Array(SPEC_N);
+    for (var sp0 = 0; sp0 < SPEC_N; sp0++) {
+      SPEC_BAND[sp0] = sp0 < 8 ? 0 : (sp0 < 16 ? 1 : 2);
+      SPEC_VAR[sp0] = 0.45 + MV.hash(sp0 * 3.31 + 0.9) * 0.55;
+    }
+    var SPK_N = 60;
+    var SPK_Y = new Float32Array(SPK_N);
+    for (var sk0 = 0; sk0 < SPK_N; sk0++) SPK_Y[sk0] = 170 + sk0 * 12.4;
+    var CST_N = 40;
+    var CNX = new Float32Array(CST_N), CNY = new Float32Array(CST_N);
+    var CPH = new Float32Array(CST_N), CSR = new Float32Array(CST_N);
+    for (var cn0 = 0; cn0 < CST_N; cn0++) {
+      var caA = MV.hash(cn0 * 3.13 + 0.7) * TAU;
+      var caR = 280 + MV.hash(cn0 * 7.91 + 2.2) * 560;
+      CNX[cn0] = MV.CX + Math.cos(caA) * caR * 0.98;
+      CNY[cn0] = MV.CY + Math.sin(caA) * caR * 0.60;
+      CPH[cn0] = MV.hash(cn0 * 5.57 + 4.1) * TAU;
+      CSR[cn0] = 2.0 + MV.hash(cn0 * 9.23 + 6.6) * 2.0;
+    }
+    var LINK_A = new Int16Array(CST_N), LINK_B = new Int16Array(CST_N);
+    var linkN = 0;
+    for (var ln0 = 0; ln0 < CST_N; ln0++) {
+      var bestN = -1, bestD = 1e9;
+      for (var ln1 = 0; ln1 < CST_N; ln1++) {
+        if (ln1 === ln0) continue;
+        var dxN = CNX[ln0] - CNX[ln1], dyN = CNY[ln0] - CNY[ln1];
+        var dN = dxN * dxN + dyN * dyN;
+        if (dN < bestD) { bestD = dN; bestN = ln1; }
+      }
+      if (bestN > ln0) { LINK_A[linkN] = ln0; LINK_B[linkN] = bestN; linkN++; }
+    }
+    var BLIP_N = 8;
+    var BLIP_A = new Float32Array(BLIP_N), BLIP_R = new Float32Array(BLIP_N);
+    for (var bl0 = 0; bl0 < BLIP_N; bl0++) {
+      BLIP_A[bl0] = MV.hash(bl0 * 4.19 + 1.7) * TAU;
+      BLIP_R[bl0] = 120 + MV.hash(bl0 * 8.53 + 3.9) * 360;
+    }
+    var EQ_N = 16;
+    var ALOG = [
+      { s: '> self :: boot', t: 16.2 },
+      { s: '> model :: execute(world)', t: 18.4 },
+      { s: '> binding signal', t: 21.0 },
+      { s: '> kernel :: ready', t: 23.5 },
+      { s: '> loop :: run(forever)', t: 26.0 },
+      { s: '> heart :: 2.400 GHz', t: 28.4 }
+    ];
 
     return {
       meta: meta,
@@ -286,6 +594,49 @@ window.MV = window.MV || {};
         var lt = t - t0;
         var appear = MV.clamp(lt / 0.9, 0, 1);
         var i, p;
+
+        /* ============================================================
+         * ENRICH:awake:pulse —— 整屏节拍能量脉冲（首个 drop 冲击感）
+         * ============================================================ */
+        var puA = MV.clamp(lt / 0.6, 0, 1);
+        if (puA > 0.01) {
+          var eP = beat.pulse * 0.030 + beat.barPulse * 0.020;
+          if (eP > 0.001) {
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.fillStyle = MV.rgba(MV.RGB.cyan, eP * puA);
+            ctx.fillRect(0, 0, MV.W, MV.H);
+            ctx.restore();
+          }
+        }
+
+        /* ============================================================
+         * ENRICH:awake:constellation —— 漂移星座 + 最近邻连线（最底层）
+         * ============================================================ */
+        var cstA = MV.clamp(lt / 0.8, 0, 1) * 0.12;
+        if (cstA > 0.005) {
+          var jj, nX, nY;
+          ctx.save();
+          ctx.strokeStyle = MV.rgba(MV.RGB.cyan, 1);
+          ctx.lineWidth = 1;
+          ctx.globalAlpha = cstA * (0.35 + beat.pulse * 0.45);
+          ctx.beginPath();
+          for (jj = 0; jj < linkN; jj++) {
+            var ia = LINK_A[jj], ib = LINK_B[jj];
+            ctx.moveTo(CNX[ia] + Math.sin(t * 0.31 + CPH[ia]) * 16, CNY[ia] + Math.cos(t * 0.27 + CPH[ia]) * 12);
+            ctx.lineTo(CNX[ib] + Math.sin(t * 0.31 + CPH[ib]) * 16, CNY[ib] + Math.cos(t * 0.27 + CPH[ib]) * 12);
+          }
+          ctx.stroke();
+          ctx.fillStyle = MV.C.cyan;
+          for (jj = 0; jj < CST_N; jj++) {
+            nX = CNX[jj] + Math.sin(t * 0.31 + CPH[jj]) * 16;
+            nY = CNY[jj] + Math.cos(t * 0.27 + CPH[jj]) * 12;
+            ctx.globalAlpha = cstA * (0.5 + beat.pulse * 0.4) * (0.6 + 0.4 * Math.sin(t * 1.7 + CPH[jj]));
+            var nsz = CSR[jj] * (0.7 + beat.pulse * 0.5);
+            ctx.fillRect(nX - nsz * 0.5, nY - nsz * 0.5, nsz, nsz);
+          }
+          ctx.restore();
+        }
 
         /* 雷达辐条（缓慢旋转） */
         ctx.save();
@@ -326,6 +677,154 @@ window.MV = window.MV || {};
         if (appear > 0.9) {
           MV.text(ctx, 'LISTENING :: ' + (beat.idx + 1), 1560, 940,
             { size: 15, color: MV.C.dim, alpha: 0.35 });
+        }
+
+        /* ============================================================
+         * ENRICH:awake:spectrum —— 24 根频谱环（env + beat）
+         * ============================================================ */
+        var spA = MV.clamp(lt / 0.7, 0, 1) * 0.18;
+        if (spA > 0.005) {
+          for (i = 0; i < SPEC_N; i++) {
+            var bd = SPEC_BAND[i];
+            var ev = bd === 0 ? env.low : (bd === 1 ? env.mid : env.high);
+            var lv = MV.clamp(ev * SPEC_VAR[i] + beat.pulse * 0.35, 0, 1);
+            var ang = -Math.PI / 2 + i * TAU / SPEC_N;
+            var r0 = 300, r1 = r0 + 18 + lv * 112;
+            var ca = Math.cos(ang), sa = Math.sin(ang);
+            ctx.save();
+            ctx.strokeStyle = bd === 2 ? MV.C.blue : MV.C.cyan;
+            ctx.lineWidth = 2.2;
+            ctx.globalAlpha = spA * (0.5 + beat.pulse * 0.5);
+            ctx.beginPath();
+            ctx.moveTo(MV.CX + ca * r0, MV.CY + sa * r0);
+            ctx.lineTo(MV.CX + ca * r1, MV.CY + sa * r1);
+            ctx.stroke();
+            ctx.fillStyle = MV.C.white;
+            ctx.globalAlpha = spA * (0.4 + lv * 0.6);
+            ctx.fillRect(MV.CX + ca * r1 - 1.5, MV.CY + sa * r1 - 1.5, 3, 3);
+            ctx.restore();
+          }
+        }
+
+        /* ============================================================
+         * ENRICH:awake:radarsweep —— 旋转扫描扇 + 光点
+         * ============================================================ */
+        var swA2 = MV.clamp(lt / 0.7, 0, 1);
+        if (swA2 > 0.005) {
+          var sAng = t * 0.9 - Math.PI / 2;
+          ctx.save();
+          for (i = 0; i < 6; i++) {
+            var aStart = sAng - 0.12 * (i + 1);
+            ctx.globalAlpha = (0.16 - i * 0.022) * swA2;
+            ctx.strokeStyle = MV.C.cyan;
+            ctx.lineWidth = 1.4;
+            ctx.beginPath();
+            ctx.arc(MV.CX, MV.CY, 520 - i * 10, aStart, aStart + 0.12);
+            ctx.stroke();
+          }
+          ctx.globalAlpha = 0.22 * swA2;
+          ctx.strokeStyle = MV.C.cyan;
+          ctx.lineWidth = 1.6;
+          ctx.beginPath();
+          ctx.moveTo(MV.CX + Math.cos(sAng) * 70, MV.CY + Math.sin(sAng) * 70);
+          ctx.lineTo(MV.CX + Math.cos(sAng) * 520, MV.CY + Math.sin(sAng) * 520);
+          ctx.stroke();
+          ctx.fillStyle = MV.C.white;
+          for (i = 0; i < BLIP_N; i++) {
+            var dAng = ((sAng - BLIP_A[i]) % TAU + TAU) % TAU;
+            var lit = Math.exp(-dAng * 2.0);
+            if (lit < 0.02) continue;
+            var bp3 = MV.CX + Math.cos(BLIP_A[i]) * BLIP_R[i];
+            var bq3 = MV.CY + Math.sin(BLIP_A[i]) * BLIP_R[i];
+            ctx.globalAlpha = (0.10 + lit * 0.28) * swA2;
+            ctx.fillRect(bp3 - 2.4, bq3 - 2.4, 4.8, 4.8);
+            if (lit > 0.35) {
+              ctx.globalAlpha = (lit - 0.35) * 0.5 * swA2;
+              ctx.strokeStyle = MV.C.white;
+              ctx.lineWidth = 1;
+              ctx.strokeRect(bp3 - 7, bq3 - 7, 14, 14);
+            }
+          }
+          ctx.restore();
+        }
+
+        /* ============================================================
+         * ENRICH:awake:speakers —— 两侧镜像波形墙
+         * ============================================================ */
+        var spkA = MV.clamp(lt / 0.8, 0, 1) * 0.12;
+        if (spkA > 0.005) {
+          ctx.save();
+          ctx.strokeStyle = MV.C.cyan;
+          ctx.lineWidth = 1.5;
+          ctx.globalAlpha = spkA * (0.55 + beat.pulse * 0.45);
+          var ampS = 16 + env.low * 34 + env.mid * 20 + beat.pulse * 10;
+          ctx.beginPath();
+          for (i = 0; i < SPK_N; i++) {
+            var sy2 = SPK_Y[i];
+            var ox2 = Math.sin(sy2 * 0.021 + t * 2.4) * ampS;
+            if (i === 0) ctx.moveTo(60 + ox2, sy2); else ctx.lineTo(60 + ox2, sy2);
+          }
+          ctx.stroke();
+          ctx.beginPath();
+          for (i = 0; i < SPK_N; i++) {
+            var sy3 = SPK_Y[i];
+            var ox3 = Math.sin(sy3 * 0.021 + t * 2.4) * ampS;
+            if (i === 0) ctx.moveTo(1860 - ox3, sy3); else ctx.lineTo(1860 - ox3, sy3);
+          }
+          ctx.stroke();
+          ctx.globalAlpha = spkA * 0.5;
+          ctx.beginPath();
+          ctx.moveTo(60, 170); ctx.lineTo(60, 170 + (SPK_N - 1) * 12.4);
+          ctx.moveTo(1860, 170); ctx.lineTo(1860, 170 + (SPK_N - 1) * 12.4);
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        /* ============================================================
+         * ENRICH:awake:eq —— 两侧 EQ 阶梯（每拍脉动）
+         * ============================================================ */
+        var eqA = MV.clamp(lt / 0.7, 0, 1) * 0.12;
+        if (eqA > 0.005) {
+          ctx.save();
+          for (i = 0; i < EQ_N; i++) {
+            var ey = 930 - i * 44;
+            var eband = i < 6 ? env.high : (i < 11 ? env.mid : env.low);
+            var ew = 22 + (eband * 70 + beat.pulse * 36 + MV.hash(i * 3.7 + 1.2) * 26) * (0.4 + 0.6 * MV.hash(i * 2.1 + 5.5));
+            ctx.globalAlpha = eqA * (0.6 + beat.pulse * 0.4);
+            ctx.fillStyle = i % 2 ? MV.C.cyan : MV.C.blue;
+            ctx.fillRect(250 - ew, ey, ew, 6);
+            ctx.fillRect(1670, ey, ew, 6);
+          }
+          ctx.restore();
+        }
+
+        /* ============================================================
+         * ENRICH:awake:log —— 终端日志打字机（16.2s 起）
+         * ============================================================ */
+        var logA = MV.clamp(lt / 0.6, 0, 1) * 0.5;
+        if (logA > 0.005) {
+          ctx.save();
+          ctx.font = '15px ' + MV.FONT_MONO;
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          for (i = 0; i < ALOG.length; i++) {
+            var el = ALOG[i];
+            var nl = MV.typeCount(t, el.t, el.s.length, 26);
+            if (nl <= 0) continue;
+            var lyA = 150 + i * 27;
+            ctx.fillStyle = MV.C.dim;
+            ctx.globalAlpha = logA * 0.7;
+            ctx.fillText('>', 140, lyA);
+            ctx.fillStyle = i % 3 === 0 ? MV.C.cyan : MV.C.white;
+            ctx.globalAlpha = logA;
+            ctx.fillText(el.s.slice(0, nl), 162, lyA);
+            if (i === ALOG.length - 1 && nl >= el.s.length && (t * 1.6) % 1 < 0.5) {
+              ctx.fillStyle = MV.C.cyan;
+              ctx.globalAlpha = logA * 0.9;
+              ctx.fillRect(162 + ctx.measureText(el.s).width + 4, lyA - 8, 9, 16);
+            }
+          }
+          ctx.restore();
         }
       }
     };
@@ -372,6 +871,26 @@ window.MV = window.MV || {};
       hypB.push([1380 + 9000 / (yy2 - 540), yy2]);
     }
 
+    /* ENRICH:math:lattice — 方格纸网格坐标（工厂期预计算） */
+    var gx = [], gy = [];
+    for (i = 0; i <= 1920; i += 80) gx.push(i);
+    for (i = 0; i <= 1080; i += 80) gy.push(i);
+    /* ENRICH:math:twinkle — 46 点闪烁相位 / 速度表 */
+    var twPh = new Float32Array(N), twSp = new Float32Array(N);
+    for (i = 0; i < N; i++) {
+      twPh[i] = MV.hash(i * 5.7) * TAU;
+      twSp[i] = 1.1 + MV.hash(i * 2.9) * 1.8;
+    }
+    /* ENRICH:math:theta — 360 条预计算角度读数（仅 ASCII） */
+    var THETA = [];
+    for (i = 0; i < 360; i++) THETA.push('THETA ' + i + ' DEG');
+    /* ENRICH:math:ghosts — 幽灵正弦相位表 */
+    var ghostPh = [0, 2.1, 4.2];
+    /* ENRICH:math:axis — 轴刻度静态字符串 */
+    var XTICKV = ['0', '90', '180', '270', '360'];
+    var YTICKV = ['+1', '0', '-1'];
+    var dashPat = [10, 12];
+
     return {
       meta: meta,
       enter: function () {},
@@ -379,6 +898,16 @@ window.MV = window.MV || {};
       update: function (t, env, beat) {},
       draw: function (ctx, t, env, beat) {
         var i, p, k;
+
+        /* ENRICH:math:lattice — 极淡方格纸全场景铺底（alpha<=0.05） */
+        ctx.save();
+        ctx.strokeStyle = MV.rgba(MV.RGB.cyan, 0.04);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (i = 0; i < gx.length; i++) { ctx.moveTo(gx[i], 0); ctx.lineTo(gx[i], MV.H); }
+        for (i = 0; i < gy.length; i++) { ctx.moveTo(0, gy[i]); ctx.lineTo(MV.W, gy[i]); }
+        ctx.stroke();
+        ctx.restore();
 
         /* ---------- ① 点集 / DIMENSION ---------- */
         var pSet = MV.clamp((t - tPoints) / 1.2, 0, 1);
@@ -417,6 +946,29 @@ window.MV = window.MV || {};
           }
         }
 
+        /* ENRICH:math:twinkle — 46 点闪烁 + 垂直摆动叠加（不移动原点） */
+        if (pSet > 0.01) {
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = MV.C.cyan;
+          for (i = 0; i < N; i++) {
+            var wk = 0.5 + 0.5 * Math.sin(t * twSp[i] + twPh[i]);
+            if (wk < 0.28) continue;
+            var wobY = Math.sin(t * 1.3 + i * 0.9) * 6 * pSet;
+            ctx.globalAlpha = 0.20 * wk * pSet;
+            ctx.beginPath();
+            ctx.moveTo(PX[i] - 5, PY[i]);
+            ctx.lineTo(PX[i] - 2, PY[i]);
+            ctx.moveTo(PX[i] + 2, PY[i]);
+            ctx.lineTo(PX[i] + 5, PY[i]);
+            ctx.stroke();
+            ctx.globalAlpha = 0.14 * wk * pSet;
+            ctx.fillRect(PX[i] - 1, PY[i] + wobY - 1, 2, 2);
+          }
+          ctx.restore();
+        }
+
         /* ---------- ② 圆 / CIRCUMFERENCE ---------- */
         var pC = MV.easeOutCubic(MV.clamp((t - tCircle) / 1.6, 0, 1));
         if (pC > 0.01) {
@@ -448,6 +1000,24 @@ window.MV = window.MV || {};
             ctx.fill();
             ctx.restore();
             MV.text(ctx, 'C = 2πr', CX + 240, CY - 210, { size: 16, color: MV.C.dim, alpha: 0.4 });
+          }
+
+          /* ENRICH:math:radius-vector — 旋转半径向量 + ASCII 角度读数 + 行进圆周点 */
+          if (t > tCirc - 0.15) {
+            var ra2 = t * 0.9;
+            var deg = ((Math.floor(ra2 * 180 / Math.PI) % 360) + 360) % 360;
+            MV.line(ctx, CX, CY, CX + Math.cos(ra2) * CR, CY + Math.sin(ra2) * CR,
+              MV.C.white, 1.2, 0.30);
+            MV.text(ctx, THETA[deg], CX + 296, CY - 190,
+              { size: 13, color: MV.C.dim, alpha: 0.5 });
+            ctx.save();
+            ctx.fillStyle = MV.C.cyan;
+            for (i = 0; i < 48; i++) {
+              var da2 = i * TAU / 48 + t * 0.35;
+              ctx.globalAlpha = 0.10 + 0.12 * (0.5 + 0.5 * Math.sin(i * 1.7 + t * 2.2));
+              ctx.fillRect(CX + Math.cos(da2) * CR - 1.4, CY + Math.sin(da2) * CR - 1.4, 2.8, 2.8);
+            }
+            ctx.restore();
           }
         }
 
@@ -498,6 +1068,33 @@ window.MV = window.MV || {};
               }
             }
           }
+
+          /* ENRICH:math:ghosts — 三条相位错开的幽灵正弦 + y 投影点/线 */
+          if (t > tSine + 0.4) {
+            ctx.save();
+            ctx.strokeStyle = MV.rgba(MV.RGB.blue, 0.10);
+            ctx.lineWidth = 1.2;
+            for (k = 0; k < 3; k++) {
+              ctx.beginPath();
+              for (i = 0; i <= 120; i++) {
+                var gx2 = SX0 + (SX1 - SX0) * (i / 120);
+                var gy2 = CY + Math.sin((gx2 - SX0) * 0.0085 * (1 + k * 0.22) + ghostPh[k] + t * 0.6) * 110;
+                if (i === 0) ctx.moveTo(gx2, gy2); else ctx.lineTo(gx2, gy2);
+              }
+              ctx.stroke();
+            }
+            ctx.restore();
+            var pu = ((t - tSine) * 0.26) % 1;
+            var px2 = SX0 + pu * (SX1 - SX0);
+            var py2 = sineY(px2);
+            MV.line(ctx, px2, py2, px2, CY, MV.C.dim, 1, 0.28);
+            MV.line(ctx, px2, CY, SX0 - 30, CY, MV.C.dim, 1, 0.14);
+            ctx.save();
+            ctx.fillStyle = MV.C.white;
+            ctx.globalAlpha = 0.5;
+            ctx.fillRect(px2 - 2.5, CY - 2.5, 5, 5);
+            ctx.restore();
+          }
         }
 
         /* ---------- ④ 无穷 / LIMITATIONS ---------- */
@@ -530,6 +1127,32 @@ window.MV = window.MV || {};
           ctx.stroke();
           ctx.restore();
           MV.text(ctx, 'x → a', 1420, 150, { size: 16, color: MV.C.dim, alpha: 0.45 });
+          /* ENRICH:math:asymptote — 滚动渐近虚线 + 两支滑动点 */
+          ctx.save();
+          ctx.setLineDash(dashPat);
+          ctx.lineDashOffset = -((t * 26) % 22);
+          ctx.strokeStyle = MV.rgba(MV.RGB.cyan, 0.14 * pI);
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(1380, 120); ctx.lineTo(1380, 960);
+          ctx.stroke();
+          ctx.restore();
+          var suA = (t * 0.22) % 1;
+          var suB = (t * 0.19 + 0.37) % 1;
+          var ia = Math.min(hypA.length - 2, Math.floor(suA * (hypA.length - 1)));
+          var ib = Math.min(hypB.length - 2, Math.floor(suB * (hypB.length - 1)));
+          var fa = suA * (hypA.length - 1) - ia;
+          var fb = suB * (hypB.length - 1) - ib;
+          var ax2 = MV.lerp(hypA[ia][0], hypA[ia + 1][0], fa);
+          var ay2 = MV.lerp(hypA[ia][1], hypA[ia + 1][1], fa);
+          var bx2 = MV.lerp(hypB[ib][0], hypB[ib + 1][0], fb);
+          var by2 = MV.lerp(hypB[ib][1], hypB[ib + 1][1], fb);
+          ctx.save();
+          ctx.fillStyle = MV.C.cyan;
+          ctx.globalAlpha = 0.55 * pI;
+          ctx.fillRect(ax2 - 3, ay2 - 3, 6, 6);
+          ctx.fillRect(bx2 - 3, by2 - 3, 6, 6);
+          ctx.restore();
           /* 微弱 ∞ 双纽线 */
           var lemA = MV.clamp((t - tInf - 0.5) / 1.2, 0, 1) * 0.12;
           if (lemA > 0.005) {
@@ -572,6 +1195,29 @@ window.MV = window.MV || {};
           }
         }
 
+        /* ENRICH:math:labels — 角落函数标签 + 轴刻度数字（静态字符串） */
+        if (t > tSine) {
+          var lbA = MV.clamp((t - tSine) / 1.0, 0, 1);
+          MV.text(ctx, 'f(x) = sin x', SX0 + 10, CY - 250,
+            { size: 15, color: MV.C.dim, alpha: 0.4 * lbA });
+          ctx.save();
+          ctx.font = '12px ' + MV.FONT_MONO;
+          ctx.fillStyle = MV.C.dim;
+          ctx.textAlign = 'center';
+          ctx.globalAlpha = 0.32 * lbA;
+          for (i = 0; i < XTICKV.length; i++) {
+            var txx = SX0 + (SX1 - SX0) * (i / (XTICKV.length - 1));
+            MV.line(ctx, txx, CY - 5, txx, CY + 5, MV.C.dim, 1, 0.32 * lbA);
+            ctx.fillText(XTICKV[i], txx, CY + 22);
+          }
+          for (i = 0; i < YTICKV.length; i++) {
+            var tyy = CY + (i - 1) * 110;
+            MV.line(ctx, SX0 - 5, tyy, SX0 + 5, tyy, MV.C.dim, 1, 0.32 * lbA);
+            ctx.fillText(YTICKV[i], SX0 - 30, tyy + 4);
+          }
+          ctx.restore();
+        }
+
         /* ---------- “我”的光点（中心左） ---------- */
         var rr = 7 + env.low * 5 + beat.pulse * 4;
         MV.drawMe(ctx, CX, CY, rr, 1, { glow: 0.8 });
@@ -599,6 +1245,25 @@ window.MV = window.MV || {};
     var merged = false;
 
     var W0 = 200, W1 = 1720;
+
+    /* ENRICH:current:readouts — 预计算 0..100 的 ASCII 读数 */
+    var RMSSTR = [], CHGSTR = [];
+    for (var q = 0; q <= 100; q++) {
+      var qs = (q < 10 ? '00' : (q < 100 ? '0' : '')) + q;
+      RMSSTR.push('RMS ' + qs + '%');
+      CHGSTR.push('CHARGE ' + qs + '%');
+    }
+    /* ENRICH:current:warp — 预分配确定性星场表（纯 t 函数） */
+    var STN = 110;
+    var stA = new Float32Array(STN), stR = new Float32Array(STN), stS = new Float32Array(STN);
+    for (q = 0; q < STN; q++) {
+      stA[q] = MV.hash(q * 3.7) * TAU;
+      stR[q] = MV.hash(q * 7.9);
+      stS[q] = 0.6 + MV.hash(q * 11.3) * 0.9;
+    }
+    var starCols = [MV.rgba(MV.RGB.white, 1), MV.rgba(MV.RGB.cyan, 1)];
+    /* ENRICH:current:lissajous — 点阵尺寸常量 */
+    var LNX = 13, LNY = 8;
 
     /* 致盲（整句 “And then blind my vision”）：0.35s 进入 → 保持至 ≈49.40s → 0.5s 恢复 */
     var BLIND_IN = 0.35;
@@ -816,6 +1481,36 @@ window.MV = window.MV || {};
           { size: 20, color: isDC ? MV.C.cyan : MV.C.white, alpha: 0.65, align: 'right' });
         MV.text(ctx, 'ƒ = 129.2 Hz', W0 + 10, MV.CY - 170,
           { size: 16, color: MV.C.dim, alpha: 0.45, align: 'left' });
+
+        /* ENRICH:current:harmonics — 2/3 次谐波幽灵 + RMS 表格表（44.45-46.3） */
+        var hK = MV.clamp((t - tSwitch) / 0.4, 0, 1) *
+          (1 - MV.clamp((t - 46.05) / 0.35, 0, 1));
+        if (hK > 0.01) {
+          ctx.save();
+          ctx.strokeStyle = MV.rgba(MV.RGB.blue, 0.16 * hK);
+          ctx.lineWidth = 1.2;
+          for (var hm = 2; hm <= 3; hm++) {
+            ctx.beginPath();
+            for (i = 0; i <= 200; i++) {
+              var hx = W0 + (W1 - W0) * (i / 200);
+              var hy = MV.CY + Math.sin((hx - W0) * 0.012 * hm + t * 4.2 * hm) * amp * 120 * (0.55 / hm);
+              if (i === 0) ctx.moveTo(hx, hy); else ctx.lineTo(hx, hy);
+            }
+            ctx.stroke();
+          }
+          ctx.restore();
+          var rv = Math.sqrt((env.low * env.low + env.mid * env.mid + env.high * env.high) / 3);
+          var ri = MV.clamp(Math.round(rv * 100), 0, 100);
+          ctx.save();
+          ctx.strokeStyle = MV.rgba(MV.RGB.cyan, 0.35 * hK);
+          ctx.lineWidth = 1.4;
+          ctx.strokeRect(W0 + 6, MV.CY - 208, 134, 14);
+          ctx.fillStyle = MV.rgba(MV.RGB.cyan, 0.25 * hK);
+          ctx.fillRect(W0 + 8, MV.CY - 206, 130 * rv, 10);
+          ctx.restore();
+          MV.text(ctx, RMSSTR[ri], W0 + 10, MV.CY - 228,
+            { size: 13, color: MV.C.dim, alpha: 0.5 * hK, align: 'left' });
+        }
         /* 直流段：一个匀速滑动的电流点，暗示恒定电流（仅在真正直流阶段出现） */
         var dotIn = MV.clamp((t - (tACDC + 0.45)) / 0.3, 0, 1);
         var dotOut = 1 - MV.clamp((t - (tBlind - 0.5)) / 0.5, 0, 1);
@@ -837,6 +1532,80 @@ window.MV = window.MV || {};
           ctx.beginPath();
           ctx.arc(xd, MV.CY, 5, 0, TAU);
           ctx.fill();
+          ctx.restore();
+        }
+
+        /* ENRICH:current:charge — 直流轨充电标记 + CHARGE 读数（46.3-47.67） */
+        var cK = MV.clamp((t - 46.3) / 0.25, 0, 1) *
+          (1 - MV.clamp((t - (tBlind - 0.45)) / 0.45, 0, 1));
+        if (cK > 0.01) {
+          var cF = MV.clamp((t - 46.3) / 1.12, 0, 1);
+          var ci = MV.clamp(Math.round(cF * 100), 0, 100);
+          ctx.save();
+          ctx.strokeStyle = MV.rgba(MV.RGB.cyan, 0.42 * cK);
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          for (i = 0; i <= 24; i++) {
+            var cxx = MV.lerp(W0, W1, i / 24);
+            var lit = (i / 24) <= cF;
+            ctx.moveTo(cxx, MV.CY + 30);
+            ctx.lineTo(cxx, MV.CY + 30 + (lit ? 16 : 7));
+          }
+          ctx.stroke();
+          ctx.fillStyle = MV.rgba(MV.RGB.cyan, 0.55 * cK);
+          var cdot = MV.lerp(W0, W1, cF);
+          ctx.fillRect(cdot - 2, MV.CY + 28, 4, 4);
+          ctx.restore();
+          MV.text(ctx, CHGSTR[ci], W0 + 10, MV.CY + 70,
+            { size: 13, color: MV.C.dim, alpha: 0.55 * cK, align: 'left' });
+          /* ENRICH:current:bus — 直流母线斜纹 + 右侧电平表（增强直流段画面密度） */
+          ctx.save();
+          ctx.strokeStyle = MV.rgba(MV.RGB.cyan, 0.16 * cK);
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          for (i = 0; i <= 60; i++) {
+            var bx2 = MV.lerp(W0, W1, i / 60);
+            ctx.moveTo(bx2, MV.CY - 22);
+            ctx.lineTo(bx2 + 10, MV.CY - 10);
+          }
+          ctx.stroke();
+          ctx.strokeStyle = MV.rgba(MV.RGB.blue, 0.14 * cK);
+          ctx.beginPath();
+          for (i = 0; i <= 60; i++) {
+            var bx3 = MV.lerp(W0, W1, i / 60);
+            ctx.moveTo(bx3, MV.CY + 12);
+            ctx.lineTo(bx3 + 10, MV.CY + 24);
+          }
+          ctx.stroke();
+          var mlx = W1 - 74, mly = MV.CY - 150;
+          ctx.strokeStyle = MV.rgba(MV.RGB.cyan, 0.40 * cK);
+          ctx.strokeRect(mlx, mly, 26, 300);
+          for (var lb = 0; lb < 12; lb++) {
+            ctx.globalAlpha = cK * ((lb / 12) < cF ? 0.85 : 0.16);
+            ctx.fillStyle = lb > 8 ? MV.C.red : MV.C.cyan;
+            ctx.fillRect(mlx + 4, mly + 288 - lb * 23, 18, 16);
+          }
+          ctx.restore();
+        }
+
+        /* ENRICH:current:warp — 预分配确定性速度线星场（51.36-55.5） */
+        var wpK = MV.clamp((t - tTravel) / 0.5, 0, 1) *
+          (1 - MV.clamp((t - 55.0) / 0.5, 0, 1));
+        if (wpK > 0.01) {
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.lineWidth = 1.2;
+          for (i = 0; i < STN; i++) {
+            var wr = (MV.hash(i * 17.7) * 0.8 + (t - tTravel) * 0.55 * stS[i]) % 1;
+            var wr0 = 60 + wr * 860;
+            var wr1 = wr0 + 30 + wr * 110 * wpK;
+            ctx.globalAlpha = (1 - wr) * 0.22 * wpK;
+            ctx.strokeStyle = starCols[stR[i] > 0.5 ? 1 : 0];
+            ctx.beginPath();
+            ctx.moveTo(MV.CX + Math.cos(stA[i]) * wr0, MV.CY + Math.sin(stA[i]) * wr0 * 0.72);
+            ctx.lineTo(MV.CX + Math.cos(stA[i]) * wr1, MV.CY + Math.sin(stA[i]) * wr1 * 0.72);
+            ctx.stroke();
+          }
           ctx.restore();
         }
 
@@ -958,6 +1727,42 @@ window.MV = window.MV || {};
               }
             }
 
+            /* ENRICH:current:entangle — Lissajous 点阵 + 解析切向火花 + 深度环（56.13-59.22） */
+            var etK = 1 - MV.clamp((t - 58.7) / 0.5, 0, 1);
+            if (t > 56.13 && etK > 0.01) {
+              ctx.save();
+              ctx.fillStyle = MV.C.cyan;
+              for (i = 0; i < LNX; i++) {
+                for (var jj = 0; jj < LNY; jj++) {
+                  var lu = i / (LNX - 1), lv = jj / (LNY - 1);
+                  var lxx = MV.CX + Math.sin(lu * 6.283 + t * 0.9) * 210 * stR[(i + jj * LNX) % STN];
+                  var lyy = MV.CY + Math.sin(lv * 6.283 + t * 1.3 + 1.1) * 130 * stR[(i * 3 + jj) % STN];
+                  ctx.globalAlpha = 0.10 * etK;
+                  ctx.fillRect(lxx - 1, lyy - 1, 2, 2);
+                }
+              }
+              ctx.restore();
+              ctx.save();
+              ctx.strokeStyle = MV.rgba(MV.RGB.white, 0.22 * etK);
+              ctx.lineWidth = 1.2;
+              ctx.beginPath();
+              for (i = 0; i < 9; i++) {
+                var sa2 = ph * 0.5 + i * TAU / 9;
+                var sr2 = rOrb + 34 + 26 * Math.sin(i * 2.3 + t * 1.7);
+                var tx0 = MV.CX + Math.cos(sa2) * sr2;
+                var ty0 = MV.CY + Math.sin(sa2) * sr2 * 0.94;
+                var tdx = -Math.sin(sa2) * 16, tdy = Math.cos(sa2) * 16 * 0.94;
+                ctx.moveTo(tx0 - tdx, ty0 - tdy);
+                ctx.lineTo(tx0 + tdx, ty0 + tdy);
+              }
+              ctx.stroke();
+              ctx.restore();
+              for (i = 0; i < 3; i++) {
+                var dr2 = ((t - 56.13) * 130 + i * 140) % 420;
+                MV.ring(ctx, MV.CX, MV.CY, dr2, MV.C.blue, 1, 0.10 * (1 - dr2 / 420) * etK);
+              }
+            }
+
             /* 粒子本体：红色的我 + 蓝色的你 */
             MV.drawMe(ctx, xr2, yr2, 6.5, 0.95, { tint: MV.RGB.red, glow: 1.2 });
             MV.drawMe(ctx, xb2, yb2, 6.5, 0.95, { tint: MV.RGB.blue, glow: 1.2 });
@@ -973,6 +1778,25 @@ window.MV = window.MV || {};
         if (meK > 0.02) {
           var rr = (7 + env.low * 5 + beat.pulse * 4) * (0.35 + 0.65 * meK);
           MV.drawMe(ctx, MV.CX, MV.CY, rr, meK, { glow: 0.8 });
+        }
+        /* ENRICH:current:crosshair — 旋转目标准星（49.53-51.5） */
+        var chK = MV.clamp((t - tDizzy) / 0.5, 0, 1) *
+          (1 - MV.clamp((t - (tTravel - 0.1)) / 0.5, 0, 1));
+        if (chK > 0.01) {
+          var chR = 120 + 18 * Math.sin(t * 1.8);
+          MV.ring(ctx, MV.CX, MV.CY, chR, MV.C.cyan, 1.2, 0.22 * chK);
+          MV.cross(ctx, MV.CX, MV.CY, 46, MV.C.white, 0.20 * chK, 1);
+          ctx.save();
+          ctx.strokeStyle = MV.rgba(MV.RGB.cyan, 0.22 * chK);
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          for (i = 0; i < 12; i++) {
+            var ca = i * TAU / 12 + t * 0.35;
+            ctx.moveTo(MV.CX + Math.cos(ca) * (chR - 12), MV.CY + Math.sin(ca) * (chR - 12));
+            ctx.lineTo(MV.CX + Math.cos(ca) * (chR + 12), MV.CY + Math.sin(ca) * (chR + 12));
+          }
+          ctx.stroke();
+          ctx.restore();
         }
         ctx.restore(); /* 眩晕变换结束 */
 
@@ -1012,6 +1836,24 @@ window.MV = window.MV || {};
           ctx.fillRect(0, 0, MV.W, MV.H);
           ctx.restore();
         }
+
+        /* ENRICH:current:tunnel — 单色后退矩形隧道（致盲叠加之后绘制，47.67-49.4） */
+        if (t > tBlind && t < tBlind + 1.73) {
+          var tnK = MV.clamp((t - tBlind) / 0.4, 0, 1) *
+            (1 - MV.clamp((t - (tBlind + 1.25)) / 0.45, 0, 1));
+          if (tnK > 0.01) {
+            ctx.save();
+            ctx.strokeStyle = MV.C.dim;
+            ctx.lineWidth = 1.5;
+            for (i = 0; i < 8; i++) {
+              var tp = ((t * 0.42) + i / 8) % 1;
+              var tw = MV.lerp(1500, 90, MV.easeOutCubic(tp));
+              ctx.globalAlpha = (1 - tp) * 0.22 * tnK;
+              ctx.strokeRect(MV.CX - tw / 2, MV.CY - tw * 0.3, tw, tw * 0.6);
+            }
+            ctx.restore();
+          }
+        }
       }
     };
   });
@@ -1029,6 +1871,14 @@ window.MV = window.MV || {};
     var parts = new MV.Particles(900);
     var rings = [];       /* 六边形 / 冲击波环 */
     var lastBeat = -1;
+
+    /* ENRICH:chorus:hex — 4 个反向旋转六边形的转向 / 半径表 */
+    var hexDir = [1, -1, 1, -1];
+    var hexR = [180, 300, 420, 540];
+    /* ENRICH:chorus:timing — SATISFACTION 时间（全局查找，缺失时回退） */
+    var tSat = pm['SATISFACTION'] || MV.findPart('SATISFACTION').t || 70.5;
+    /* ENRICH:chorus:eq — 周边 EQ 条数量 */
+    var EQN = 72;
 
     function onPart(s, i, part) {
       if (part.en === 'EXECUTION') {
@@ -1086,6 +1936,17 @@ window.MV = window.MV || {};
       draw: function (ctx, t, env, beat) {
         var i;
 
+        /* ENRICH:chorus:hex — 4 个反向旋转六边形（alpha<=0.10） */
+        for (i = 0; i < 4; i++) {
+          ctx.save();
+          ctx.strokeStyle = MV.rgba(i % 2 ? MV.RGB.blue : MV.RGB.cyan, 0.08);
+          ctx.lineWidth = 1.2;
+          MV.polyPath(ctx, MV.CX, MV.CY, hexR[i] * (1 + beat.pulse * 0.03), 6,
+            t * hexDir[i] * (0.12 + i * 0.04) + i * 0.8);
+          ctx.stroke();
+          ctx.restore();
+        }
+
         /* 环绕能量晶格：三个旋转的六边形，随低频能量增强 */
         var lat = 0.10 + env.low * 0.15;
         for (i = 0; i < 3; i++) {
@@ -1112,6 +1973,44 @@ window.MV = window.MV || {};
           ctx.stroke();
           ctx.restore();
         }
+
+        /* ENRICH:chorus:sparks — STIMULATIONS / SATISFACTION 解析径向火花 */
+        var skK = 0;
+        var skA = t - tStim, skB = t - tSat;
+        if (skA > 0 && skA < 2.2) skK = Math.max(skK, (1 - skA / 2.2) * MV.clamp(skA / 0.25, 0, 1));
+        if (skB > 0 && skB < 2.2) skK = Math.max(skK, (1 - skB / 2.2) * MV.clamp(skB / 0.25, 0, 1));
+        if (skK > 0.01) {
+          ctx.save();
+          ctx.strokeStyle = MV.rgba(MV.RGB.white, 0.20 * skK);
+          ctx.lineWidth = 1.4;
+          ctx.beginPath();
+          for (i = 0; i < 28; i++) {
+            var sa = MV.hash(i * 5.1) * TAU + t * 0.25;
+            var r0 = 170 + MV.hash(i * 9.7) * 90;
+            var r1 = r0 + 90 + MV.hash(i * 3.3) * 240 * skK;
+            ctx.moveTo(MV.CX + Math.cos(sa) * r0, MV.CY + Math.sin(sa) * r0);
+            ctx.lineTo(MV.CX + Math.cos(sa) * r1, MV.CY + Math.sin(sa) * r1);
+          }
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        /* ENRICH:chorus:eq — 周边 EQ 条（env.low/mid 驱动，alpha<=0.12） */
+        ctx.save();
+        ctx.strokeStyle = MV.rgba(MV.RGB.cyan, 0.12);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (i = 0; i < EQN; i++) {
+          var ea = i * TAU / EQN;
+          var ev = 0.5 + 0.5 * Math.sin(i * 1.9 + t * (2.2 + env.mid * 3));
+          var el = 10 + (env.low * 42 + env.mid * 26 + env.high * 14) * ev;
+          var erx = MV.CX + Math.cos(ea) * 620;
+          var ery = MV.CY + Math.sin(ea) * 620;
+          ctx.moveTo(erx, ery);
+          ctx.lineTo(erx + Math.cos(ea) * el, ery + Math.sin(ea) * el);
+        }
+        ctx.stroke();
+        ctx.restore();
 
         /* 六边形 / 冲击波环 */
         for (i = 0; i < rings.length; i++) {
@@ -1199,6 +2098,14 @@ window.MV = window.MV || {};
     var LIFE = 3.2;     /* 停留秒数（描绘完成后） */
     var DISS = 0.7;     /* 溶解时长 */
 
+    /* ENRICH:cute:garden — 花园基线预计算（草叶 x/高度） */
+    var GRASS_N = 64;
+    var grassX = new Float32Array(GRASS_N), grassH = new Float32Array(GRASS_N);
+    for (var gi = 0; gi < GRASS_N; gi++) {
+      grassX[gi] = 120 + MV.hash(gi * 3.7) * 1680;
+      grassH[gi] = 8 + MV.hash(gi * 7.1) * 18;
+    }
+
     function creaturePath(kind, p, ctx) {
       /* 每个子路径单独描画（虚线揭示） */
       var L, draw;
@@ -1282,6 +2189,12 @@ window.MV = window.MV || {};
     })();
     var LYCO_LEN = lycoCum[lycoCum.length - 1];
 
+    /* ENRICH:cute:lyco-bond — 21 个主链键的预计算键级标签 */
+    var LYCO_LAB = [];
+    for (var bi = 0; bi < LYCO_N - 1; bi++) {
+      LYCO_LAB.push('C' + (bi + 1) + (bi % 2 === 0 ? '=C' : '-C') + (bi + 2));
+    }
+
     function lycoSpinePath(c) {
       c.moveTo(lycoSpine[0][0], lycoSpine[0][1]);
       for (var k = 1; k < lycoSpine.length; k++) c.lineTo(lycoSpine[k][0], lycoSpine[k][1]);
@@ -1342,6 +2255,29 @@ window.MV = window.MV || {};
       },
       draw: function (ctx, t, env, beat) {
         var i;
+
+        /* ENRICH:cute:garden — 线框花园基线（地平线 + 草叶刻度 + 漂浮花粉） */
+        MV.line(ctx, 120, 860, 1800, 860, MV.C.dim, 1, 0.14);
+        ctx.save();
+        ctx.strokeStyle = MV.rgba(warm, 0.16);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (i = 0; i < GRASS_N; i++) {
+          var gsw = Math.sin(t * 1.1 + i * 0.7) * 3;
+          ctx.moveTo(grassX[i], 860);
+          ctx.lineTo(grassX[i] + gsw, 860 - grassH[i]);
+        }
+        ctx.stroke();
+        ctx.restore();
+        ctx.save();
+        ctx.fillStyle = MV.rgba(warm, 0.5);
+        for (i = 0; i < 40; i++) {
+          var ppx = (MV.hash(i * 3.1) * MV.W + t * (6 + MV.hash(i * 7.7) * 10)) % MV.W;
+          var ppy = 620 + Math.sin(t * 0.6 + i * 1.7) * 60 + MV.hash(i * 5.3) * 160;
+          ctx.globalAlpha = 0.10 + 0.10 * (0.5 + 0.5 * Math.sin(i + t * 1.3));
+          ctx.fillRect(ppx, ppy, 2, 2);
+        }
+        ctx.restore();
 
         /* 溶解粒子（先画，位于生物背后） */
         particles.drawRect(ctx, warm, 0.7);
@@ -1419,6 +2355,86 @@ window.MV = window.MV || {};
           }
         }
 
+        /* ENRICH:cute:legend — NUTRIENTS 图例 + 环绕原子的活性生物（77.95-81.35） */
+        var lgK = MV.clamp((t - 77.95) / 0.5, 0, 1) *
+          (1 - MV.clamp((t - 80.95) / 0.4, 0, 1));
+        if (lgK > 0.01) {
+          MV.text(ctx, 'NUTRIENTS -> ANTIOXIDANTS', 620, 150,
+            { size: 16, color: MV.C.dim, alpha: 0.5 * lgK });
+          for (i = 0; i < defs.length; i++) {
+            var ad = defs[i];
+            var aage = t - ad.t;
+            if (aage < 0.6 || aage > LIFE + DISS) continue;
+            var abob = Math.sin(t * 1.6 + i * 1.7) * 5 * (0.4 + beat.pulse * 0.6);
+            ctx.save();
+            ctx.strokeStyle = MV.rgba(warm, 0.20 * lgK);
+            ctx.fillStyle = MV.rgba(warm, 0.45 * lgK);
+            for (var ai = 0; ai < 3; ai++) {
+              var aa2 = t * (0.9 + ai * 0.25) + ai * TAU / 3;
+              var ar2 = 66 + ai * 16;
+              var axx = ad.x + Math.cos(aa2) * ar2;
+              var ayy = ad.y + abob - 40 + Math.sin(aa2) * ar2 * 0.6;
+              ctx.beginPath();
+              ctx.arc(axx, ayy, 2.6, 0, TAU);
+              ctx.fill();
+              MV.line(ctx, ad.x, ad.y + abob - 40, axx, ayy, MV.C.dim, 1, 0.10 * lgK);
+            }
+            ctx.restore();
+            break;
+          }
+        }
+
+        /* ENRICH:cute:purr — 呼噜波形 + 漂浮 z 刻度（81.48-84.27） */
+        var puK = MV.clamp((t - 81.48) / 0.4, 0, 1) *
+          (1 - MV.clamp((t - 83.9) / 0.37, 0, 1));
+        if (puK > 0.01) {
+          var catD = defs[2];
+          ctx.save();
+          ctx.strokeStyle = MV.rgba(warm, 0.30 * puK);
+          ctx.lineWidth = 1.4;
+          ctx.beginPath();
+          for (i = 0; i <= 90; i++) {
+            var pwx = catD.x + 60 + (i / 90) * 220;
+            var pwy = catD.y - 150 + Math.sin(i * 0.5 + t * 14) * 7 * (0.6 + 0.4 * Math.sin(t * 3));
+            if (i === 0) ctx.moveTo(pwx, pwy); else ctx.lineTo(pwx, pwy);
+          }
+          ctx.stroke();
+          ctx.restore();
+          for (i = 0; i < 3; i++) {
+            var zp = (t * 0.5 + i / 3) % 1;
+            MV.text(ctx, 'z', catD.x + 120 + i * 34, catD.y - 190 - zp * 70,
+              { size: 14 + i * 3, color: MV.C.dim, alpha: (1 - zp) * 0.45 * puK });
+          }
+        }
+
+        /* ENRICH:cute:halo — 神的光环刻度 + 轨道卫星（85.25-87.92） */
+        var hoK = MV.clamp((t - 85.25) / 0.5, 0, 1) *
+          (1 - MV.clamp((t - 87.5) / 0.42, 0, 1));
+        if (hoK > 0.01) {
+          var gd = defs[3];
+          ctx.save();
+          ctx.strokeStyle = MV.rgba(MV.RGB.cyan, 0.18 * hoK);
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          for (i = 0; i < 36; i++) {
+            var ha = i * TAU / 36 + t * 0.30;
+            var hlen = 8 + 5 * Math.sin(i * 2.1);
+            ctx.moveTo(gd.x + Math.cos(ha) * 104, gd.y - 54 + Math.sin(ha) * 104);
+            ctx.lineTo(gd.x + Math.cos(ha) * (104 + hlen), gd.y - 54 + Math.sin(ha) * (104 + hlen));
+          }
+          ctx.stroke();
+          ctx.restore();
+          ctx.save();
+          ctx.fillStyle = MV.C.white;
+          for (i = 0; i < 3; i++) {
+            var sa3 = t * (0.7 + i * 0.3) + i * TAU / 3;
+            var sr3 = 140 + i * 34;
+            ctx.globalAlpha = 0.5 * hoK;
+            ctx.fillRect(gd.x + Math.cos(sa3) * sr3 - 2, gd.y + Math.sin(sa3) * sr3 * 0.5 - 2, 4, 4);
+          }
+          ctx.restore();
+        }
+
         /* 字幕提示区（顶部一根细标尺，随内容亮起） */
         MV.line(ctx, 560, 96, 1360, 96, MV.C.cyan, 1, 0.12 + beat.pulse * 0.08);
 
@@ -1458,6 +2474,25 @@ window.MV = window.MV || {};
             lycoSeg(ctx, lycoR2, lycoR3, lalpha * yp);
             lycoSeg(ctx, lycoR2, lycoR4, lalpha * yp);
           }
+          /* ENRICH:cute:lyco-bond — 沿共轭主链行进的亮点 + 预计算键级读数 */
+          if (lp > 0.5) {
+            var bdot = ((t - tLyco) * 0.42) % 1;
+            var bpos = 5 + bdot * (LYCO_N - 1);
+            var bseg = Math.min(lycoSpine.length - 2, Math.floor(bpos));
+            var bfrac = bpos - bseg;
+            var bxx = MV.lerp(lycoSpine[bseg][0], lycoSpine[bseg + 1][0], bfrac);
+            var byy = MV.lerp(lycoSpine[bseg][1], lycoSpine[bseg + 1][1], bfrac);
+            ctx.save();
+            ctx.fillStyle = MV.rgba(MV.RGB.white, 0.85 * lfade * lalpha);
+            ctx.beginPath();
+            ctx.arc(bxx, byy, 4.5, 0, TAU);
+            ctx.fill();
+            ctx.restore();
+            var lbx = MV.clamp(bseg - 5, 0, LYCO_LAB.length - 1);
+            MV.text(ctx, LYCO_LAB[lbx], bxx, byy - 26,
+              { size: 12, color: MV.C.dim, alpha: 0.45 * lfade });
+          }
+
           /* 名称 / 分子式 */
           var capA = MV.clamp((lp - 0.85) / 0.15, 0, 1) * lfade;
           if (capA > 0.01) {
