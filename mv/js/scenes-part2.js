@@ -484,9 +484,9 @@ window.MV = window.MV || {};
         ctx.fillRect(x0 + 4 + i * inner, y - h * 0.5 + 3, inner - 3, h - 6);
       }
       ctx.restore();
-      MV.text(ctx, 'VIBRATION CHARGE', x0 - 14, y, { size: 16, color: MV.RGB.cyan, alpha: 0.45, align: 'right' });
+      MV.text(ctx, 'VIBRATION CHARGE', x0 - 14, y, { size: 16, color: MV.C.cyan, alpha: 0.45, align: 'right' });
       MV.text(ctx, ('00' + Math.floor(ease * 100)).slice(-3) + '%', x0 + w + 14, y,
-        { size: 16, color: MV.RGB.cyan, alpha: 0.45, align: 'left' });
+        { size: 16, color: MV.C.cyan, alpha: 0.45, align: 'left' });
     }
 
     /* 蓄能期同心六边形脉冲（速度随蓄能进度提升） */
@@ -526,7 +526,7 @@ window.MV = window.MV || {};
       }
       ctx.restore();
       ctx.save();
-      ctx.fillStyle = MV.RGB.cyan;
+      ctx.fillStyle = MV.C.cyan;
       for (var i = 0; i < 40; i++) {
         var ph = i / 40;
         var k = MV.clamp(win * 1.15 - ph * 0.15, 0, 1);
@@ -724,9 +724,9 @@ window.MV = window.MV || {};
         ctx.fillRect(SIG_X + 2 + i * sw, SIG_Y + 2, sw - 2, SIG_H - 4);
       }
       ctx.restore();
-      MV.text(ctx, 'SIGNAL LINK', SIG_X, SIG_Y - 18, { size: 14, color: MV.RGB.cyan, alpha: 0.4 * a0, align: 'left' });
+      MV.text(ctx, 'SIGNAL LINK', SIG_X, SIG_Y - 18, { size: 14, color: MV.C.cyan, alpha: 0.4 * a0, align: 'left' });
       MV.text(ctx, ('00' + Math.floor(s * 100)).slice(-3) + '%', SIG_X + SIG_W, SIG_Y - 18,
-        { size: 14, color: MV.RGB.cyan, alpha: 0.4 * a0, align: 'right' });
+        { size: 14, color: MV.C.cyan, alpha: 0.4 * a0, align: 'right' });
     }
 
     /* 逐段断裂的点状链路（115.5 → ISOLATION 前完全断开） */
@@ -968,7 +968,7 @@ window.MV = window.MV || {};
       }
       ctx.restore();
       ctx.save();
-      ctx.fillStyle = MV.RGB.cyan;
+      ctx.fillStyle = MV.C.cyan;
       for (i = 0; i < 44; i++) {
         var ph = i / 44;
         var p = MV.clamp(wp * 1.35 - ph * 0.4, 0, 1);
@@ -1762,7 +1762,7 @@ window.MV = window.MV || {};
         /* 流动数据线场（背景，alpha<=0.08） */
         drawDataLines(ctx, t, col);
         /* 钢琴琶音阶梯（本段器乐突破的视觉签名，绘于弹窗之下） */
-        drawPiano(ctx, t, beat, col);
+        /* ENRICH:storm:pianotop — 琶音绘制改到弹窗之上（见 drawDialog 循环之后） */
         /* 小节闪电折线 */
         drawBolt(ctx, t);
         /* 坍缩尾段漩涡环 */
@@ -1770,6 +1770,8 @@ window.MV = window.MV || {};
 
         /* 级联错误弹窗：按生成顺序绘制（后生成的在最上层） */
         for (i = 0; i < dialogs.length; i++) drawDialog(ctx, dialogs[i], t, col);
+        /* ENRICH:storm:pianotop — 钢琴琶音键盘置于弹窗之上，确保密集段也可见 */
+        drawPiano(ctx, t, beat, col);
 
         /* 节拍环 */
         if (t < T1 - 1.6) {
