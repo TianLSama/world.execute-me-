@@ -616,11 +616,9 @@ window.MV = window.MV || {};
     /* saturation 全屏合成性能自适应：明显慢于基线时退化为普通灰色叠加 */
     var satOK = true, baseAcc = 0, baseN = 0, perfAcc = 0, perfN = 0;
 
-    function waveVal(x, t, m, dc) {
-      var s = Math.sin((x - W0) * 0.012 + t * 4.2);
-      var sq = s >= 0 ? 1 : -1;
-      var v = s * (1 - m) + sq * m;
-      return v * (1 - dc) * 120;
+    /* 交流波形：纯正弦；幅度包络 amp 平滑归零后即为一条完美直线（直流） */
+    function waveVal(x, t, amp) {
+      return Math.sin((x - W0) * 0.012 + t * 4.2) * amp * 120;
     }
 
     /* 致盲包络：升 → 保持 → 降（恢复期与 “So dizzy” 起点重叠） */
@@ -630,7 +628,7 @@ window.MV = window.MV || {};
     }
 
     /* 主波形一笔（k 为亮度系数，眩晕回声重影复用） */
-    function drawWave(ctx, t, env, m, dc, k) {
+    function drawWave(ctx, t, env, amp, k) {
       ctx.save();
       ctx.strokeStyle = MV.rgba(MV.RGB.cyan, 0.85 * k);
       ctx.lineWidth = 2.4;
@@ -638,7 +636,7 @@ window.MV = window.MV || {};
       var steps = 260;
       for (var i = 0; i <= steps; i++) {
         var x = W0 + (W1 - W0) * (i / steps);
-        var y = MV.CY + waveVal(x, t, m, dc) * (0.75 + env.mid * 0.5);
+        var y = MV.CY + waveVal(x, t, amp) * (0.75 + env.mid * 0.5);
         if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
       }
       ctx.stroke();
@@ -774,8 +772,8 @@ window.MV = window.MV || {};
       },
       draw: function (ctx, t, env, beat) {
         var i, x, y;
-        var m = MV.clamp((t - tACDC) / 0.25, 0, 1);            /* 正弦→方波 */
-        var dc = MV.clamp((t - tACDC - 0.7) / 0.35, 0, 1);      /* 方波→直流 */
+        /* 交流→直流：'To AC to DC' 之后幅度平滑归零（约 0.45s）→ 完美直线，绝无方波 */
+        var amp = 1 - MV.smoothstep(MV.clamp((t - tACDC) / 0.45, 0, 1));
         /* 眩晕强度：进入后保持，向 “Oh we can travel” 收尾时淡出 */
         var dizzyK = MV.clamp((t - tDizzy) / 0.45, 0, 1) *
           (1 - MV.smoothstep(MV.clamp((t - (tTravel - 0.55)) / 0.75, 0, 1)));
@@ -801,7 +799,7 @@ window.MV = window.MV || {};
             ctx.scale(es, es);
             ctx.translate(-MV.CX, -MV.CY);
             ctx.globalCompositeOperation = 'lighter';
-            drawWave(ctx, t, env, m, dc, 0.30 / e);
+            drawWave(ctx, t, env, amp, 0.30 / e);
             drawSpokes(ctx, t, env, dizzyK * 0.30 / e);
             drawRings(ctx, t, dizzyK * 0.75 / e);
             ctx.restore();
@@ -809,7 +807,7 @@ window.MV = window.MV || {};
         }
 
         /* ---------- 主波形 ---------- */
-        drawWave(ctx, t, env, m, dc, 1);
+        drawWave(ctx, t, env, amp, 1);
         /* 基线 */
         MV.line(ctx, W0, MV.CY, W1, MV.CY, MV.C.cyan, 1, 0.18);
         /* 输入类型标签 */
@@ -818,6 +816,29 @@ window.MV = window.MV || {};
           { size: 20, color: isDC ? MV.C.cyan : MV.C.white, alpha: 0.65, align: 'right' });
         MV.text(ctx, 'ƒ = 129.2 Hz', W0 + 10, MV.CY - 170,
           { size: 16, color: MV.C.dim, alpha: 0.45, align: 'left' });
+        /* 直流段：一个匀速滑动的电流点，暗示恒定电流（仅在真正直流阶段出现） */
+        var dotIn = MV.clamp((t - (tACDC + 0.45)) / 0.3, 0, 1);
+        var dotOut = 1 - MV.clamp((t - (tBlind - 0.5)) / 0.5, 0, 1);
+        if (amp < 0.05 && dotIn > 0.01 && dotOut > 0.01) {
+          var dAlpha = 0.5 * dotIn * dotOut;
+          var xd = W0 + ((t - (tACDC + 0.45)) * 430) % (W1 - W0);
+          if (xd < W0) xd += (W1 - W0);
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          var cg = ctx.createRadialGradient(xd, MV.CY, 0, xd, MV.CY, 26);
+          cg.addColorStop(0, MV.rgba(MV.RGB.cyan, 0.60 * dotIn * dotOut));
+          cg.addColorStop(1, MV.rgba(MV.RGB.cyan, 0));
+          ctx.fillStyle = cg;
+          ctx.fillRect(xd - 26, MV.CY - 26, 52, 52);
+          ctx.restore();
+          ctx.save();
+          ctx.globalAlpha = dAlpha;
+          ctx.fillStyle = MV.C.cyan;
+          ctx.beginPath();
+          ctx.arc(xd, MV.CY, 5, 0, TAU);
+          ctx.fill();
+          ctx.restore();
+        }
 
         /* ---------- 时空穿梭：流星雨（背景层，风格同 storm 场景） ---------- */
         if (meteors.n > 0) {
@@ -1174,6 +1195,7 @@ window.MV = window.MV || {};
     ];
     var tEnjoy = pm['ENJOYMENT'] || 84.27;
     var tExist = pm['EXISTENCE'] || 87.92;
+    var tAnti = pm['ANTIOXIDANTS'] || 80.62;
     var LIFE = 3.2;     /* 停留秒数（描绘完成后） */
     var DISS = 0.7;     /* 溶解时长 */
 
@@ -1212,6 +1234,109 @@ window.MV = window.MV || {};
           })(ra), 40, rp2, MV.rgba(warm, 0.9), 1.8, 1);
         }
       }
+    }
+
+    /* ============================================================
+     * 番茄红素（lycopene）结构式：长共轭多烯链 + 两端简化六元环
+     * 几何在工厂期一次性算好，绘制完全时间驱动（预览/寻址安全）
+     * ============================================================ */
+    var LYCO_Y = 700;                    /* 链中轴（位于生物线稿之下、底部歌词区之上） */
+    var LYCO_AMP = 26;                   /* 锯齿振幅 */
+    var LYCO_R = 34;                     /* 端环半径 */
+    var LYCO_N = 12;                     /* 锯齿段数 */
+    var LYCO_LCX = 444, LYCO_RCX = 1476; /* 端环圆心（关于 CX 对称） */
+    var LYCO_X0 = LYCO_LCX + LYCO_R, LYCO_X1 = LYCO_RCX - LYCO_R;
+    var LYCO_STEP = (LYCO_X1 - LYCO_X0) / LYCO_N;
+    /* 链顶点：首尾回到中轴（端部各半段），中间上下交替 */
+    var lycoPts = (function () {
+      var pts = [[LYCO_X0, LYCO_Y]];
+      for (var k = 1; k < LYCO_N; k++) {
+        pts.push([LYCO_X0 + LYCO_STEP * k, LYCO_Y + (k % 2 ? -LYCO_AMP : LYCO_AMP)]);
+      }
+      pts.push([LYCO_X1, LYCO_Y]);
+      return pts;
+    })();
+    /* 各顶点累计弧长（双键刻度与揭示进度同步用） */
+    var lycoCum = (function () {
+      var cum = [0], L = 0;
+      for (var k = 1; k < lycoPts.length; k++) {
+        var dx = lycoPts[k][0] - lycoPts[k - 1][0];
+        var dy = lycoPts[k][1] - lycoPts[k - 1][1];
+        L += Math.sqrt(dx * dx + dy * dy);
+        cum.push(L);
+      }
+      return cum;
+    })();
+    var LYCO_LEN = lycoCum[lycoCum.length - 1];
+
+    function lycoPath(c) {
+      c.moveTo(lycoPts[0][0], lycoPts[0][1]);
+      for (var k = 1; k < lycoPts.length; k++) c.lineTo(lycoPts[k][0], lycoPts[k][1]);
+    }
+
+    /* 上行锯齿段的内侧平行短线（双键标记，偏移 6px、长度 60%） */
+    function lycoBond(ctx, j, alpha) {
+      var A = lycoPts[j], B = lycoPts[j + 1];
+      var dx = B[0] - A[0], dy = B[1] - A[1];
+      var l = Math.sqrt(dx * dx + dy * dy);
+      var ux = dx / l, uy = dy / l;
+      var nx = -uy, ny = ux;
+      if (ny < 0) { nx = -nx; ny = -ny; }     /* 刻度一律落在链的内侧 */
+      var ox = A[0] + nx * 6 + ux * l * 0.2, oy = A[1] + ny * 6 + uy * l * 0.2;
+      ctx.save();
+      ctx.strokeStyle = MV.rgba(warm, alpha);
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(ox, oy);
+      ctx.lineTo(ox + ux * l * 0.6, oy + uy * l * 0.6);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    /* 六元环路径：顶点含 0°/180°，与链端精确衔接 */
+    function lycoRingPath(cx, cy, r) {
+      return function (c) {
+        for (var k = 0; k < 6; k++) {
+          var a = k * TAU / 6;
+          var px = cx + Math.cos(a) * r, py = cy + Math.sin(a) * r;
+          if (k === 0) c.moveTo(px, py); else c.lineTo(px, py);
+        }
+        c.closePath();
+      };
+    }
+
+    /* 环内双键刻度：第 i 条边向内偏移 5px 的平行短线 */
+    function lycoRingBond(ctx, cx, cy, r, i, alpha) {
+      var a0 = i * TAU / 6, a1 = (i + 1) * TAU / 6;
+      var ax = cx + Math.cos(a0) * r, ay = cy + Math.sin(a0) * r;
+      var bx = cx + Math.cos(a1) * r, by = cy + Math.sin(a1) * r;
+      var mx = (ax + bx) * 0.5, my = (ay + by) * 0.5;
+      var nx = cx - mx, ny = cy - my;
+      var nl = Math.max(Math.sqrt(nx * nx + ny * ny), 1e-3);
+      nx /= nl; ny /= nl;
+      var tx = (bx - ax) * 0.30, ty = (by - ay) * 0.30;
+      ctx.save();
+      ctx.strokeStyle = MV.rgba(warm, alpha);
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.moveTo(mx + nx * 5 - tx, my + ny * 5 - ty);
+      ctx.lineTo(mx + nx * 5 + tx, my + ny * 5 + ty);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    /* 甲基支线：从第 i 个顶点沿半径向外 18px */
+    function lycoMethyl(ctx, cx, cy, r, i, alpha) {
+      var a = i * TAU / 6;
+      var ax = cx + Math.cos(a) * r, ay = cy + Math.sin(a) * r;
+      ctx.save();
+      ctx.strokeStyle = MV.rgba(warm, alpha);
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(ax + Math.cos(a) * 18, ay + Math.sin(a) * 18);
+      ctx.stroke();
+      ctx.restore();
     }
 
     return {
@@ -1317,6 +1442,54 @@ window.MV = window.MV || {};
 
         /* 字幕提示区（顶部一根细标尺，随内容亮起） */
         MV.line(ctx, 560, 96, 1360, 96, MV.C.cyan, 1, 0.12 + beat.pulse * 0.08);
+
+        /* ---------- 番茄红素结构式：献给“番茄的抗氧化物” ---------- */
+        var tLyco = tAnti - 0.5;                              /* 略提前起笔，贴住歌词节奏 */
+        var lp = MV.clamp((t - tLyco) / 1.6, 0, 1);           /* 左→右描绘进度 */
+        var lfade = MV.clamp(1 - (t - 85.0) / 0.7, 0, 1);     /* 保持至 85.0s，再 0.7s 淡出 */
+        if (lp > 0 && lfade > 0.01) {
+          var lalpha = 0.55 * lfade * (0.88 + 0.12 * beat.pulse);  /* 轻微随拍呼吸 */
+          var lw = MV.rgba(warm, 1);
+          /* 左端环 → 长链 → 双键标记 → 右端环，依次揭出 */
+          var rpL = MV.clamp(lp / 0.18, 0, 1);
+          MV.reveal(ctx, lycoRingPath(LYCO_LCX, LYCO_Y, LYCO_R), 6 * LYCO_R, rpL, lw, 2, lalpha);
+          var rpT = MV.clamp((rpL - 0.6) / 0.4, 0, 1);
+          if (rpT > 0.01) {
+            lycoRingBond(ctx, LYCO_LCX, LYCO_Y, LYCO_R, 1, lalpha * rpT);
+            lycoRingBond(ctx, LYCO_LCX, LYCO_Y, LYCO_R, 4, lalpha * rpT);
+            lycoMethyl(ctx, LYCO_LCX, LYCO_Y, LYCO_R, 1, lalpha * rpT);
+            lycoMethyl(ctx, LYCO_LCX, LYCO_Y, LYCO_R, 5, lalpha * rpT);
+          }
+          var cp2 = MV.clamp((lp - 0.10) / 0.72, 0, 1);
+          if (cp2 > 0) {
+            MV.reveal(ctx, lycoPath, LYCO_LEN + 20, cp2, lw, 2, lalpha);
+            /* 双键标记随链头同步出现（仅上行锯齿段） */
+            for (var j = 0; j < LYCO_N; j += 2) {
+              var f = lycoCum[j] / LYCO_LEN;
+              var tp = MV.clamp((cp2 - f) / 0.05, 0, 1);
+              if (tp > 0.01) lycoBond(ctx, j, lalpha * tp);
+            }
+          }
+          var rpR = MV.clamp((lp - 0.82) / 0.18, 0, 1);
+          if (rpR > 0) {
+            MV.reveal(ctx, lycoRingPath(LYCO_RCX, LYCO_Y, LYCO_R), 6 * LYCO_R, rpR, lw, 2, lalpha);
+            var rpT2 = MV.clamp((rpR - 0.6) / 0.4, 0, 1);
+            if (rpT2 > 0.01) {
+              lycoRingBond(ctx, LYCO_RCX, LYCO_Y, LYCO_R, 1, lalpha * rpT2);
+              lycoRingBond(ctx, LYCO_RCX, LYCO_Y, LYCO_R, 4, lalpha * rpT2);
+              lycoMethyl(ctx, LYCO_RCX, LYCO_Y, LYCO_R, 1, lalpha * rpT2);
+              lycoMethyl(ctx, LYCO_RCX, LYCO_Y, LYCO_R, 5, lalpha * rpT2);
+            }
+          }
+          /* 名称 / 分子式 */
+          var capA = MV.clamp((lp - 0.85) / 0.15, 0, 1) * lfade;
+          if (capA > 0.01) {
+            MV.text(ctx, 'LYCOPENE', MV.CX, 776,
+              { size: 16, color: MV.C.dim, alpha: 0.55 * capA });
+            MV.text(ctx, 'C40H56', MV.CX, 800,
+              { size: 13, color: MV.C.dim, alpha: 0.40 * capA });
+          }
+        }
 
         /* “我”的光点（被小家伙们围着） */
         var rr = 8 + env.low * 5 + beat.pulse * 4;
