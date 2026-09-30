@@ -1252,19 +1252,19 @@ window.MV = window.MV || {};
       }
       return a;
     })();
-    /* 左端下垂折链（全单键）：V0→A1→A2→A3→A4→A5，末端甲基略短 */
+    /* 左端统一节奏的折叠链（全单键）：V0→L1→L2→L3→L4→L5，\ | / | \ 形 */
     var lycoLeft = [
-      lycoWP(-30, 70), lycoWP(36, 112), lycoWP(36, 176), lycoWP(-30, 218), lycoWP(-56, 236)
+      lycoWP(-40, 62), lycoWP(-40, 126), lycoWP(-2, 178), lycoWP(-2, 226), lycoWP(-34, 252)
     ];
-    var lycoBranch = lycoWP(-6, 112);          /* A2 向左的甲基支线（长 42） */
-    var lycoR1 = lycoWP(996, -70), lycoR2 = lycoWP(996, -128);
-    var lycoR3 = lycoWP(962, -162), lycoR4 = lycoWP(1030, -162);
+    var lycoBranch = lycoWP(-76, 126);         /* L2 向左的甲基支线（长 36） */
+    var lycoR1 = lycoWP(1000, -62), lycoR2 = lycoWP(1000, -122);
+    var lycoR3 = lycoWP(974, -160), lycoR4 = lycoWP(1026, -160);
     /* 主链甲基支线：顶点下标 + 方向（-1 上 / +1 下），长 32px */
     var lycoMethyls = [[2, -1], [6, -1], [10, 1], [14, 1], [18, -1]];
     /* 揭示主线：左端甲基末端 → 折链向上 → 主链向右 → 右端 R1/R2（整体左→右） */
     var lycoSpine = (function () {
       var p = [], k;
-      for (k = lycoLeft.length - 1; k >= 0; k--) p.push(lycoLeft[k]);  /* A5…A1 */
+      for (k = lycoLeft.length - 1; k >= 0; k--) p.push(lycoLeft[k]);  /* L5…L1 */
       for (k = 0; k < LYCO_N; k++) p.push(lycoPts[k]);                 /* V0…V21 */
       p.push(lycoR1); p.push(lycoR2);                                  /* R1→R2 */
       return p;
@@ -1447,10 +1447,14 @@ window.MV = window.MV || {};
             var sp = MV.clamp((lp - lycoCum[5 + si] / LYCO_LEN) / 0.04, 0, 1);
             if (sp > 0.01) lycoDouble(ctx, lycoPts[si], lycoPts[si + 1], lalpha * sp);
           }
-          /* 右端：竖直双键的平行线 + Y 形两个甲基（C(CH3)2 头） */
+          /* 右端：竖直双键的内侧平行线（偏移 6px、两端各缩 ~7.5%）+ Y 形短甲基 */
           var yp = MV.clamp((lp - 0.94) / 0.06, 0, 1);
           if (yp > 0.01) {
-            lycoSeg(ctx, [lycoR1[0] - 6, lycoR1[1]], [lycoR2[0] - 6, lycoR2[1]], lalpha * yp);
+            var vy0 = 0.075, vy1 = 0.925;
+            lycoSeg(ctx,
+              [lycoR1[0] - 6, lycoR1[1] + (lycoR2[1] - lycoR1[1]) * vy0],
+              [lycoR1[0] - 6, lycoR1[1] + (lycoR2[1] - lycoR1[1]) * vy1],
+              lalpha * yp);
             lycoSeg(ctx, lycoR2, lycoR3, lalpha * yp);
             lycoSeg(ctx, lycoR2, lycoR4, lalpha * yp);
           }
