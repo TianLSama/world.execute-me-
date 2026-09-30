@@ -1,0 +1,340 @@
+/* ============================================================
+ * style.css —— 设计系统与 DOM 叠加层样式
+ * 设计令牌（颜色/字体/间距）集中在 :root，画布内视觉使用同源调色板。
+ * ============================================================ */
+
+:root {
+  /* 颜色令牌（与 js/util.js 中 MV.C / MV.RGB 保持一致） */
+  --bg: #05070d;            /* 近黑蓝背景 */
+  --cyan: #57e8ff;          /* 主青色 */
+  --blue: #2a6cff;          /* 辅助蓝 */
+  --white: #e8f4ff;         /* 主文字 */
+  --dim: #8ba5c0;           /* 次级文字 */
+  --red: #ff3b4e;           /* 危险红（执行/非法） */
+  --pink: #ff7ac8;          /* 爱之粉（终段专用） */
+  --purple: #a06bff;        /* 恍惚紫（性别段专用） */
+
+  /* 字体令牌 */
+  --font-mono: 'Cascadia Mono', 'Consolas', 'Courier New', monospace;
+  --font-cjk: 'Microsoft YaHei', 'PingFang SC', 'Noto Sans SC', system-ui, sans-serif;
+
+  /* 间距令牌 */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+
+  /* 字号令牌 */
+  --lyric-en: 30px;
+  --lyric-zh: 16px;
+  --pop-chant: 118px;
+  --pop-count: 96px;
+  --pop-final: 168px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--white);
+  font-family: var(--font-mono);
+}
+
+body.idle { cursor: none; }
+
+/* ---------- 画布 ---------- */
+#stage {
+  position: fixed;
+  inset: 0;
+  display: block;
+  background: var(--bg);
+}
+
+/* ---------- 中央弹出层 ---------- */
+#center-layer {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.pop {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  will-change: transform, opacity;
+  text-align: center;
+}
+
+.pop-chant {
+  color: var(--red);
+  font-size: var(--pop-chant);
+  letter-spacing: 8px;
+  text-shadow: 0 0 26px rgba(255, 59, 78, 0.75), 0 0 60px rgba(255, 59, 78, 0.35);
+}
+
+.pop-count {
+  color: var(--white);
+  font-size: var(--pop-count);
+  letter-spacing: 4px;
+  text-shadow: 0 0 20px rgba(232, 244, 255, 0.7);
+}
+
+.pop-final {
+  color: var(--red);
+  font-size: var(--pop-final);
+  letter-spacing: 12px;
+  text-shadow: 0 0 42px rgba(255, 59, 78, 0.9), 0 0 90px rgba(255, 59, 78, 0.45);
+}
+
+.pop-ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 300px;
+  height: 300px;
+  margin: 0;
+  border: 2px solid rgba(232, 244, 255, 0.9);
+  border-radius: 50%;
+  box-shadow: 0 0 24px rgba(232, 244, 255, 0.5), inset 0 0 24px rgba(232, 244, 255, 0.25);
+  transform: translate(-50%, -50%) scale(0.4);
+  opacity: 0.85;
+}
+
+/* 中央打字机（speech 类型） */
+#speech-line {
+  position: absolute;
+  left: 50%;
+  top: 47%;
+  transform: translate(-50%, -50%);
+  font-family: var(--font-mono);
+  font-size: 76px;
+  letter-spacing: 2px;
+  color: var(--white);
+  text-shadow: 0 0 22px rgba(87, 232, 255, 0.65);
+  white-space: nowrap;
+}
+
+.cursor-block {
+  display: inline-block;
+  width: 0.52em;
+  height: 0.92em;
+  margin-left: 8px;
+  background: var(--cyan);
+  vertical-align: -0.1em;
+  box-shadow: 0 0 14px rgba(87, 232, 255, 0.8);
+  animation: blink 1s steps(1, end) infinite;
+}
+
+@keyframes blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+/* ---------- 底部歌词层 ---------- */
+#lyrics-layer {
+  position: fixed;
+  left: 50%;
+  bottom: 8.5%;
+  transform: translateX(-50%);
+  width: min(1280px, 92vw);
+  text-align: center;
+  pointer-events: none;
+  z-index: 9;
+}
+
+#repeat-layer {
+  position: relative;
+  height: 0;
+}
+
+.rline {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translate(-50%, -18px);
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 27px;
+  color: var(--white);
+  opacity: 0.95;
+  will-change: transform, opacity;
+}
+
+#lyric-en {
+  font-family: var(--font-mono);
+  font-size: var(--lyric-en);
+  line-height: 1.42;
+  color: var(--white);
+}
+
+.lpart { opacity: 0.30; }
+
+.lpart.caps {
+  color: var(--cyan);
+  letter-spacing: 1.5px;
+  text-shadow: 0 0 14px rgba(87, 232, 255, 0.55);
+}
+
+.lpart.exec {
+  color: var(--red);
+  text-shadow: 0 0 16px rgba(255, 59, 78, 0.6);
+}
+
+.lpart.love {
+  color: var(--pink);
+  text-shadow: 0 0 16px rgba(255, 122, 200, 0.6);
+}
+
+#lyric-zh {
+  margin-top: 10px;
+  font-family: var(--font-cjk);
+  font-size: var(--lyric-zh);
+  letter-spacing: 1px;
+  color: var(--dim);
+}
+
+/* ---------- 底部控件 ---------- */
+#controls {
+  position: fixed;
+  right: 26px;
+  bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  z-index: 20;
+  transition: opacity 0.35s ease;
+}
+
+body.idle #controls {
+  opacity: 0;
+  pointer-events: none;
+}
+
+#btn-play {
+  width: 36px;
+  height: 28px;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--dim);
+  background: transparent;
+  border: 1px solid rgba(139, 165, 192, 0.35);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+#btn-play:hover {
+  color: var(--cyan);
+  border-color: rgba(87, 232, 255, 0.6);
+}
+
+#progress {
+  position: relative;
+  width: 220px;
+  height: 3px;
+  background: rgba(232, 244, 255, 0.16);
+  cursor: pointer;
+}
+
+#progress-fill {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, var(--cyan), var(--blue));
+  transform: scaleX(0);
+  transform-origin: left center;
+  will-change: transform;
+}
+
+#timecode {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.5px;
+  color: var(--dim);
+  min-width: 118px;
+  text-align: right;
+}
+
+/* ---------- 遮罩层 ---------- */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+  text-align: center;
+  background: radial-gradient(circle at 50% 42%, #0a1220 0%, #04060c 58%, #000 100%);
+}
+
+.overlay.hidden { display: none; }
+
+.ov-title {
+  font-family: var(--font-mono);
+  font-size: clamp(44px, 7vw, 104px);
+  letter-spacing: 3px;
+  color: var(--white);
+  text-shadow: 0 0 34px rgba(87, 232, 255, 0.5);
+}
+
+.ov-sub {
+  font-family: var(--font-cjk);
+  font-size: 15px;
+  letter-spacing: 5px;
+  color: var(--dim);
+}
+
+#btn-exec,
+#btn-replay {
+  margin-top: var(--sp-4);
+  padding: 14px 38px;
+  font-family: var(--font-mono);
+  font-size: 18px;
+  letter-spacing: 3px;
+  color: var(--cyan);
+  background: transparent;
+  border: 1px solid rgba(87, 232, 255, 0.55);
+  cursor: pointer;
+  transition: background 0.25s, box-shadow 0.25s, color 0.25s;
+}
+
+#btn-exec:hover,
+#btn-replay:hover {
+  background: rgba(87, 232, 255, 0.12);
+  box-shadow: 0 0 26px rgba(87, 232, 255, 0.28);
+}
+
+.ov-hint {
+  margin-top: var(--sp-3);
+  font-family: var(--font-cjk);
+  font-size: 12px;
+  letter-spacing: 1.5px;
+  color: rgba(139, 165, 192, 0.7);
+}
+
+/* ---------- 小屏适配 ---------- */
+@media (max-width: 900px) {
+  :root {
+    --lyric-en: 20px;
+    --lyric-zh: 13px;
+    --pop-chant: 72px;
+    --pop-count: 60px;
+    --pop-final: 96px;
+  }
+  #speech-line { font-size: 44px; }
+  #progress { width: 130px; }
+}

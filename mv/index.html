@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,">
+<title>world.execute(me); — 交互式 MV</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- 画布舞台：所有可视化绘制于此 -->
+  <canvas id="stage"></canvas>
+
+  <!-- 中央弹出层（打字机 / 巨词 / 数字） -->
+  <div id="center-layer" aria-hidden="true"></div>
+
+  <!-- 底部歌词层（普通歌词 / repeat 堆叠） -->
+  <div id="lyrics-layer" aria-hidden="true">
+    <div id="repeat-layer"></div>
+    <div id="lyric-en"></div>
+    <div id="lyric-zh"></div>
+  </div>
+
+  <!-- 底部控件：播放/暂停 + 细进度条 + 时间码 -->
+  <div id="controls">
+    <button id="btn-play" title="播放 / 暂停（空格）">▶</button>
+    <div id="progress" title="点击跳转"><div id="progress-fill"></div></div>
+    <div id="timecode">0:00.0 / 3:56.5</div>
+  </div>
+
+  <!-- 启动遮罩 -->
+  <div id="overlay-start" class="overlay">
+    <div class="ov-title">world.execute(me);</div>
+    <div class="ov-sub">Mili · 交互式音乐可视化</div>
+    <button id="btn-exec">▶ 执行 / EXECUTE</button>
+    <div class="ov-hint">空格 暂停/继续 · 鼠标静止 3 秒隐藏控件</div>
+  </div>
+
+  <!-- 播放结束遮罩 -->
+  <div id="overlay-done" class="overlay hidden">
+    <button id="btn-replay">REPLAY ↻</button>
+  </div>
+
+  <!-- 音频（M4A-in-mp3 容器，文件名保持原样） -->
+  <audio id="audio" src="../world.execute(me);.mp3" preload="auto"></audio>
+
+  <!-- 脚本按依赖顺序加载：数据 → 工具 → 特效 → 歌词 → 引擎 → 场景 ×3 → 启动 -->
+  <script src="timeline.js"></script>
+  <script src="env.js"></script>
+  <script src="js/util.js"></script>
+  <script src="js/fx.js"></script>
+  <script src="js/lyrics.js"></script>
+  <script src="js/engine.js"></script>
+  <script src="js/scenes-part1.js"></script>
+  <script src="js/scenes-part2.js"></script>
+  <script src="js/scenes-part3.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
