@@ -11,6 +11,10 @@ node_modules/
 # agent 记忆文件
 MEMORY.md
 
+# 渲染产物 / QA 临时产物（体积大或可重新生成）
+*.mp4
+mv/_qa*/
+
 # 系统文件
 Thumbs.db
 desktop.ini
