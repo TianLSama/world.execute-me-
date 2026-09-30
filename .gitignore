@@ -1,0 +1,17 @@
+# 分析中间产物（体积大，可重新生成）
+scripts/analysis/audio22k.wav
+scripts/analysis/hf-cache/
+scripts/analysis/*.wav
+
+# agent / 工具缓存
+.codegraph/
+.omo/
+node_modules/
+
+# agent 记忆文件
+MEMORY.md
+
+# 系统文件
+Thumbs.db
+desktop.ini
+.DS_Store
