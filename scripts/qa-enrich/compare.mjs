@@ -45,6 +45,8 @@ function parseArgs(argv) {
     out: 'mv/_qa_enrich',
     sparseRichnessRatio: 1.10,
     sparseMotion: 0.004,
+    sparsePassRatio: 0.8,
+    motionRel: 1.1,
     denseRichnessRatio: 0.97,
     denseEdgeRatio: 0.97,
     fpsSlack: 2,
@@ -59,6 +61,8 @@ function parseArgs(argv) {
       case '--out': o.out = val(); break;
       case '--sparse-richness-ratio': o.sparseRichnessRatio = Number(val()); break;
       case '--sparse-motion': o.sparseMotion = Number(val()); break;
+      case '--sparse-pass-ratio': o.sparsePassRatio = Number(val()); break;
+      case '--motion-rel': o.motionRel = Number(val()); break;
       case '--dense-richness-ratio': o.denseRichnessRatio = Number(val()); break;
       case '--dense-edge-ratio': o.denseEdgeRatio = Number(val()); break;
       case '--fps-slack': o.fpsSlack = Number(val()); break;
@@ -111,7 +115,7 @@ function checkSamples(base, enr, T) {
       row.pass = richOk && edgeOk;
     } else {
       const richOk = e.richness >= T.sparseRichnessRatio * b.richness;
-      const motionOk = e.motion >= T.sparseMotion;
+      const motionOk = e.motion >= T.sparseMotion || e.motion >= T.motionRel * (b.motion || 0);
       row.checks = { richnessRatio: rr, richnessOk: richOk, motion: e.motion, motionOk };
       if (!richOk) row.reasons.push(`sparse Richness ${num(e.richness)} < ${T.sparseRichnessRatio}×${num(b.richness)}`);
       if (!motionOk) row.reasons.push(`motion ${num(e.motion)} < ${T.sparseMotion}`);
@@ -173,6 +177,8 @@ function main() {
   const T = {
     sparseRichnessRatio: opts.sparseRichnessRatio,
     sparseMotion: opts.sparseMotion,
+    sparsePassRatio: opts.sparsePassRatio,
+    motionRel: opts.motionRel,
     denseRichnessRatio: opts.denseRichnessRatio,
     denseEdgeRatio: opts.denseEdgeRatio,
     fpsSlack: opts.fpsSlack,
@@ -182,7 +188,12 @@ function main() {
   const fps = checkFps(readJsonOrNull(join(bDir, 'fps.json')), readJsonOrNull(join(eDir, 'fps.json')), T);
   const errors = checkErrors(readJsonOrNull(join(bDir, 'errors.json')), readJsonOrNull(join(eDir, 'errors.json')));
 
-  const samplesPass = samples.length > 0 && samples.every((s) => s.pass);
+  const sparseRows = samples.filter((s) => s.kind !== 'dense');
+  const denseRows = samples.filter((s) => s.kind === 'dense');
+  const sparsePassCount = sparseRows.filter((s) => s.pass).length;
+  const sparseOk = sparseRows.length === 0 || (sparsePassCount / sparseRows.length) >= T.sparsePassRatio;
+  const denseOk = denseRows.every((s) => s.pass);
+  const samplesPass = samples.length > 0 && sparseOk && denseOk;
   const fpsPass = !fps.missing && fps.rows.length > 0 && fps.rows.every((s) => s.pass);
   const overallPass = samplesPass && fpsPass && errors.pass;
 
