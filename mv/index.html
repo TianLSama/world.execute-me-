@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="icon" href="data:,">
-<title>world.execute(me); — 交互式 MV</title>
+<title>world.execute(me); — MV</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -23,17 +23,15 @@
 
   <!-- 底部控件：播放/暂停 + 细进度条 + 时间码 -->
   <div id="controls">
-    <button id="btn-play" title="播放 / 暂停（空格）">▶</button>
-    <div id="progress" title="点击跳转"><div id="progress-fill"></div></div>
+    <button id="btn-play" title="Play / Pause (Space)">▶</button>
+    <div id="progress" title="Click to seek"><div id="progress-fill"></div></div>
     <div id="timecode">0:00.0 / 3:56.5</div>
   </div>
 
   <!-- 启动遮罩 -->
   <div id="overlay-start" class="overlay">
     <div class="ov-title">world.execute(me);</div>
-    <div class="ov-sub">Mili · 交互式音乐可视化</div>
-    <button id="btn-exec">▶ 执行 / EXECUTE</button>
-    <div class="ov-hint">空格 暂停/继续 · 鼠标静止 3 秒隐藏控件</div>
+    <button id="btn-exec">▶ EXECUTE</button>
   </div>
 
   <!-- 播放结束遮罩 -->

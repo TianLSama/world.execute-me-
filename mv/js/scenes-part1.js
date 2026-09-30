@@ -600,6 +600,22 @@ window.MV = window.MV || {};
 
     var W0 = 200, W1 = 1720;
 
+    /* 致盲（整句 “And then blind my vision”）：0.35s 进入 → 保持至 ≈49.40s → 0.5s 恢复 */
+    var BLIND_IN = 0.35;
+    var BLIND_HOLD = tBlind + 1.73;
+    var BLIND_OUT = 0.50;
+
+    /* 红蓝对撞时序：加速 1.2s 后于中心碰撞 */
+    var MERGE_START = tUnite - 0.15;
+    var MERGE_DUR = 1.2;
+    var tMerge = MERGE_START + MERGE_DUR;
+
+    /* 时空穿梭流星粒子池（本场景私有，风格对齐 storm 场景） */
+    var meteors = new MV.Particles(800);
+
+    /* saturation 全屏合成性能自适应：明显慢于基线时退化为普通灰色叠加 */
+    var satOK = true, baseAcc = 0, baseN = 0, perfAcc = 0, perfN = 0;
+
     function waveVal(x, t, m, dc) {
       var s = Math.sin((x - W0) * 0.012 + t * 4.2);
       var sq = s >= 0 ? 1 : -1;
@@ -607,46 +623,193 @@ window.MV = window.MV || {};
       return v * (1 - dc) * 120;
     }
 
+    /* 致盲包络：升 → 保持 → 降（恢复期与 “So dizzy” 起点重叠） */
+    function blindAt(t) {
+      return MV.clamp((t - tBlind) / BLIND_IN, 0, 1) *
+        (1 - MV.smoothstep(MV.clamp((t - BLIND_HOLD) / BLIND_OUT, 0, 1)));
+    }
+
+    /* 主波形一笔（k 为亮度系数，眩晕回声重影复用） */
+    function drawWave(ctx, t, env, m, dc, k) {
+      ctx.save();
+      ctx.strokeStyle = MV.rgba(MV.RGB.cyan, 0.85 * k);
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      var steps = 260;
+      for (var i = 0; i <= steps; i++) {
+        var x = W0 + (W1 - W0) * (i / steps);
+        var y = MV.CY + waveVal(x, t, m, dc) * (0.75 + env.mid * 0.5);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      /* 柔光第二笔 */
+      ctx.globalAlpha = 0.18 * k;
+      ctx.lineWidth = 8;
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    /* 眩晕辐条：整体转速随时间起伏 */
+    function drawSpokes(ctx, t, env, k) {
+      if (k <= 0.01) return;
+      ctx.save();
+      ctx.strokeStyle = MV.rgba(MV.RGB.cyan, (0.11 + env.mid * 0.08) * k);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (var i = 0; i < 16; i++) {
+        var a = i * TAU / 16 + t * (0.65 + 0.30 * Math.sin(t * 0.7));
+        var r0 = 150 + Math.sin(t * 2.0 + i * 1.1) * 26;
+        var r1 = 720 + Math.sin(t * 1.3 + i * 0.8) * 60;
+        ctx.moveTo(MV.CX + Math.cos(a) * r0, MV.CY + Math.sin(a) * r0);
+        ctx.lineTo(MV.CX + Math.cos(a) * r1, MV.CY + Math.sin(a) * r1);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    /* 眩晕环 + 双螺旋臂：半径带行波抖动，扭曲向外传播 */
+    function drawRings(ctx, t, k) {
+      if (k <= 0.01) return;
+      var i, j;
+      for (i = 1; i <= 5; i++) {
+        var base = 110 + i * 92;
+        var wob = Math.sin(t * 2.4 - base * 0.0045 + i * 0.5) * (14 + i * 9);
+        MV.ring(ctx, MV.CX, MV.CY, base + wob, i % 2 ? MV.C.cyan : MV.C.blue, 1.2, 0.10 * k);
+      }
+      ctx.save();
+      ctx.strokeStyle = MV.rgba(MV.RGB.cyan, 0.10 * k);
+      ctx.lineWidth = 1.4;
+      for (j = 0; j < 2; j++) {
+        ctx.beginPath();
+        for (i = 0; i <= 48; i++) {
+          var th = i * 0.28;
+          var rr = 70 + th * 62;
+          var aa = th + t * 0.7 + j * Math.PI;
+          var px = MV.CX + Math.cos(aa) * rr;
+          var py = MV.CY + Math.sin(aa) * rr;
+          if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    /* 流星发射：与 storm 场景同款（顶/左侧入场，右下方向，加色拖尾） */
+    function emitMeteors(n, speedMul, t) {
+      for (var i = 0; i < n; i++) {
+        var fromTop = MV.hash(i * 3.1 + Math.floor(t * 31) * 7.7) > 0.45;
+        var px = fromTop ? MV.hash(i * 7.3 + t) * MV.W : -120;
+        var py = fromTop ? -80 : MV.hash(i * 5.9 + t) * MV.H * 0.7;
+        var sp = (600 + MV.hash(i * 9.7) * 900) * speedMul;
+        meteors.spawn(px, py, sp, sp * 0.42,
+          0.9 + MV.hash(i * 11.3) * 0.8, 2 + MV.hash(i * 13.1) * 3, i);
+      }
+    }
+
+    /* 纠缠尾迹：沿圆形轨道向过去采样的一段螺旋弧线（k0..k1 为采样序号） */
+    function trailArc(ctx, cx, cy, ang, r0, dAng, dR, wob, k0, k1, rgb, alpha, width) {
+      ctx.beginPath();
+      for (var k = k0; k <= k1; k++) {
+        var aa = ang - k * dAng;
+        var rr = r0 + k * dR + Math.sin(k * 0.55 + ang * 1.7) * wob * (k / k1);
+        var px = cx + Math.cos(aa) * rr;
+        var py = cy + Math.sin(aa) * rr * 0.94;
+        if (k === k0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.strokeStyle = MV.rgba(rgb, alpha);
+      ctx.lineWidth = width;
+      ctx.stroke();
+    }
+
+    /* 接近段速度拖尾：三段由长到短、由暗到亮（dir=-1 尾迹向左，+1 向右） */
+    function streakSeg(ctx, x, y, dir, len, rgb, alpha) {
+      var widths = [5.0, 3.0, 1.6], frac = [1, 0.55, 0.25], al = [0.10, 0.22, 0.45];
+      for (var k = 0; k < 3; k++) {
+        ctx.strokeStyle = MV.rgba(rgb, al[k] * alpha);
+        ctx.lineWidth = widths[k];
+        ctx.beginPath();
+        ctx.moveTo(x + dir * len * frac[k], y);
+        ctx.lineTo(x, y);
+        ctx.stroke();
+      }
+    }
+
     return {
       meta: meta,
-      enter: function () { merged = false; },
-      exit: function () {},
-      update: function (t, env, beat) {
+      enter: function () {
+        merged = false;
+        meteors.clear();
+        baseAcc = 0; baseN = 0; perfAcc = 0; perfN = 0;
+        satOK = true;
+      },
+      exit: function () { meteors.clear(); },
+      update: function (t, dt, env, beat) {
         meta.grid = 0.06 + MV.clamp((t - tDizzy) / 2, 0, 1) * 0.05;
+
+        /* 流星：仅在时空穿梭窗口内发射，密度随中/高频能量 */
+        if (t > tTravel - 0.15 && t < 55.5 && dt > 0) {
+          var isp = 0.7 + env.mid * 1.5 + env.high * 0.6;
+          var tail = 1 - MV.clamp((t - 54.6) / 0.9, 0, 1);
+          var rate = 300 * isp * tail;
+          var n = Math.floor(rate * dt);
+          if (Math.random() < rate * dt - n) n++;
+          emitMeteors(n, isp, t);
+        }
+        if (dt > 0) meteors.step(dt, null);
+
+        /* saturation 性能采样：致盲期帧时长明显劣于基线时永久退化 */
+        if (dt > 0) {
+          var bk = blindAt(t);
+          if (satOK && bk > 0.5) {
+            perfAcc += dt; perfN++;
+            if (perfN >= 45) {
+              var base = baseN > 20 ? baseAcc / baseN : 1 / 60;
+              if (perfAcc / perfN > Math.max(base * 1.7, 1 / 42)) satOK = false;
+              perfAcc = 0; perfN = 0;
+            }
+          } else if (bk <= 0.01 && baseN < 60) {
+            baseAcc += dt; baseN++;
+          }
+        }
       },
       draw: function (ctx, t, env, beat) {
         var i, x, y;
         var m = MV.clamp((t - tACDC) / 0.25, 0, 1);            /* 正弦→方波 */
         var dc = MV.clamp((t - tACDC - 0.7) / 0.35, 0, 1);      /* 方波→直流 */
-        var dizzy = MV.clamp((t - tDizzy) / 1.6, 0, 1);
+        /* 眩晕强度：进入后保持，向 “Oh we can travel” 收尾时淡出 */
+        var dizzyK = MV.clamp((t - tDizzy) / 0.45, 0, 1) *
+          (1 - MV.smoothstep(MV.clamp((t - (tTravel - 0.55)) / 0.75, 0, 1)));
 
-        /* 眩晕：整个画面缓慢摇摆 + 轻微缩放 */
+        /* 眩晕：明显更强的摇摆旋转（≈±4°）+ 1.9% 缩放抖动 */
         ctx.save();
-        if (dizzy > 0.01) {
+        if (dizzyK > 0.01) {
+          var ang = (Math.sin(t * 1.15) * 0.048 + Math.sin(t * 2.7 + 1.3) * 0.021) * dizzyK;
+          var sc = 1 + (Math.sin(t * 1.4) * 0.013 + Math.sin(t * 3.1 + 0.7) * 0.006) * dizzyK;
           ctx.translate(MV.CX, MV.CY);
-          ctx.rotate(Math.sin(t * 0.9) * 0.035 * dizzy);
-          var sc = 1 + Math.sin(t * 1.35) * 0.012 * dizzy;
+          ctx.rotate(ang);
           ctx.scale(sc, sc);
           ctx.translate(-MV.CX, -MV.CY);
+
+          /* 运动模糊回声：沿角速度方向滞后的两层低透明重影 */
+          var av = Math.cos(t * 1.15) * 1.15 * 0.048 + Math.cos(t * 2.7 + 1.3) * 2.7 * 0.021;
+          var lag = MV.clamp(av * dizzyK * 0.42, -0.075, 0.075);
+          for (var e = 1; e <= 2; e++) {
+            ctx.save();
+            ctx.translate(MV.CX, MV.CY);
+            ctx.rotate(lag * e);
+            var es = 1 - 0.009 * e * dizzyK;
+            ctx.scale(es, es);
+            ctx.translate(-MV.CX, -MV.CY);
+            ctx.globalCompositeOperation = 'lighter';
+            drawWave(ctx, t, env, m, dc, 0.30 / e);
+            drawSpokes(ctx, t, env, dizzyK * 0.30 / e);
+            drawRings(ctx, t, dizzyK * 0.75 / e);
+            ctx.restore();
+          }
         }
 
         /* ---------- 主波形 ---------- */
-        ctx.save();
-        ctx.strokeStyle = MV.rgba(MV.RGB.cyan, 0.85);
-        ctx.lineWidth = 2.4;
-        ctx.beginPath();
-        var steps = 260;
-        for (i = 0; i <= steps; i++) {
-          x = W0 + (W1 - W0) * (i / steps);
-          y = MV.CY + waveVal(x, t, m, dc) * (0.75 + env.mid * 0.5);
-          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-        }
-        ctx.stroke();
-        /* 柔光第二笔 */
-        ctx.globalAlpha = 0.18;
-        ctx.lineWidth = 8;
-        ctx.stroke();
-        ctx.restore();
+        drawWave(ctx, t, env, m, dc, 1);
         /* 基线 */
         MV.line(ctx, W0, MV.CY, W1, MV.CY, MV.C.cyan, 1, 0.18);
         /* 输入类型标签 */
@@ -656,7 +819,15 @@ window.MV = window.MV || {};
         MV.text(ctx, 'ƒ = 129.2 Hz', W0 + 10, MV.CY - 170,
           { size: 16, color: MV.C.dim, alpha: 0.45, align: 'left' });
 
-        /* ---------- 时空穿梭：坠落的年份柱 + 星迹 ---------- */
+        /* ---------- 时空穿梭：流星雨（背景层，风格同 storm 场景） ---------- */
+        if (meteors.n > 0) {
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          meteors.drawStreak(ctx, MV.mix(MV.RGB.white, MV.RGB.cyan, 0.55), 0.9, 0.028);
+          ctx.restore();
+        }
+
+        /* ---------- 时空穿梭：坠落的年份柱（前景层，保持原样） ---------- */
         if (t > tTravel && t < tADBC + 2.5) {
           ctx.save();
           ctx.font = '38px ' + MV.FONT_MONO;
@@ -675,86 +846,147 @@ window.MV = window.MV || {};
             ctx.fillText(label, x, y);
           }
           ctx.restore();
-          /* 斜向星迹 */
-          ctx.save();
-          ctx.strokeStyle = MV.rgba(MV.RGB.white, 0.22);
-          ctx.lineWidth = 1.4;
-          for (i = 0; i < 36; i++) {
-            var q = ((t - tTravel) * 320 + MV.hash(i * 7.7) * 1800) % 1800;
-            x = 1900 - q * 0.55;
-            y = -120 + q;
-            ctx.globalAlpha = 0.22 * (1 - q / 1800);
-            ctx.beginPath();
-            ctx.moveTo(x, y);
-            ctx.lineTo(x + 46, y - 92);
-            ctx.stroke();
-          }
-          ctx.restore();
         }
 
-        /* ---------- 致盲：0.9 秒近黑 ---------- */
-        var blind = 0;
-        if (t > tBlind && t < tBlind + 1.0) {
-          blind = Math.min(MV.clamp((t - tBlind) / 0.12, 0, 1),
-            MV.clamp((tBlind + 1.0 - t) / 0.16, 0, 1));
+        /* ---------- 眩晕辐条 / 扭曲环（主层） ---------- */
+        if (dizzyK > 0.01) {
+          drawSpokes(ctx, t, env, dizzyK);
+          drawRings(ctx, t, dizzyK);
         }
 
-        /* ---------- 眩晕辐条 ---------- */
-        if (dizzy > 0.01) {
-          ctx.save();
-          ctx.strokeStyle = MV.rgba(MV.RGB.cyan, 0.10 + env.mid * 0.08);
-          ctx.lineWidth = 1;
-          for (i = 0; i < 16; i++) {
-            var a = t * 0.6 + i * TAU / 16;
-            ctx.beginPath();
-            ctx.moveTo(MV.CX + Math.cos(a) * 150, MV.CY + Math.sin(a) * 150);
-            ctx.lineTo(MV.CX + Math.cos(a) * 720, MV.CY + Math.sin(a) * 720);
-            ctx.stroke();
-          }
-          ctx.restore();
-          /* 摇荡同心环 */
-          for (i = 1; i <= 5; i++) {
-            MV.ring(ctx, MV.CX, MV.CY, 120 + i * 90 + Math.sin(t * 2 + i) * 22,
-              MV.C.cyan, 1, 0.10 * dizzy);
-          }
-        }
+        /* ---------- 融合：红蓝对撞 → 纠缠旋转 ---------- */
+        if (t > MERGE_START - 0.35) {
+          var appear = MV.clamp((t - (MERGE_START - 0.35)) / 0.3, 0, 1);
+          var ap = MV.clamp((t - MERGE_START) / MERGE_DUR, 0, 1);
+          var apE = ap * ap;                       /* ease-in：越近中心越快 */
+          var xr = MV.lerp(660, MV.CX, apE);
+          var xb = MV.lerp(1260, MV.CX, apE);
 
-        /* ---------- 融合：两个点 / 两条线 → 一个点 ---------- */
-        if (t > tUnite - 0.4) {
-          var up = MV.smoothstep(MV.clamp((t - tUnite) / Math.max(tDeep - tUnite, 0.5), 0, 1));
-          var x1 = MV.lerp(660, MV.CX, up);
-          var x2 = MV.lerp(1260, MV.CX, up);
-          var seg = 300 * (1 - up);
-          MV.line(ctx, x1 - seg, MV.CY, x1, MV.CY, MV.C.cyan, 1.6, 0.4);
-          MV.line(ctx, x2, MV.CY, x2 + seg, MV.CY, MV.C.cyan, 1.6, 0.4);
-          MV.drawMe(ctx, x1, MV.CY, 6, 0.9);
-          MV.drawMe(ctx, x2, MV.CY, 6, 0.9);
-          if (up >= 1) {
+          if (ap < 1) {
+            /* 接近段：加色速度拖尾 + 红/蓝光点（同 “我” 的绘制规格） */
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.lineCap = 'round';
+            var segK = 40 + 340 * ap;
+            streakSeg(ctx, xr, MV.CY, -1, segK, MV.RGB.red, appear);
+            streakSeg(ctx, xb, MV.CY, 1, segK, MV.RGB.blue, appear);
+            ctx.restore();
+            MV.drawMe(ctx, xr, MV.CY, 7, appear, { tint: MV.RGB.red, glow: 1.1 });
+            MV.drawMe(ctx, xb, MV.CY, 7, appear, { tint: MV.RGB.blue, glow: 1.1 });
+          } else {
             if (!merged) {
               merged = true;
-              MV.FX.flash(MV.RGB.cyan, 0.35, 0.5);
-              MV.FX.zoomPulse(0.03, 0.4);
+              MV.FX.flash(MV.RGB.white, 0.45, 0.45);
+              MV.FX.shake(5, 0.35);
+              MV.FX.zoomPulse(0.035, 0.45);
             }
-            /* 深深入髓：缓慢扩散的深度环 */
-            for (i = 0; i < 5; i++) {
-              var dr = ((t - tDeep) * 150 + i * 88) % 440;
-              MV.ring(ctx, MV.CX, MV.CY, dr, i % 2 ? MV.C.cyan : MV.C.blue, 1.4,
-                0.28 * (1 - dr / 440));
+            var ct = t - tMerge;
+
+            /* 碰撞冲击波：三圈先后向外扩散 */
+            for (i = 0; i < 3; i++) {
+              var cp = MV.clamp((ct - i * 0.09) / 0.85, 0, 1);
+              if (cp > 0 && cp < 1) {
+                MV.ring(ctx, MV.CX, MV.CY, MV.easeOutCubic(cp) * (560 + i * 130),
+                  i === 0 ? MV.C.white : (i === 1 ? MV.C.cyan : MV.C.blue),
+                  2.4 - i * 0.6, 0.5 * (1 - cp) * (1 - cp));
+              }
             }
-            MV.text(ctx, 'UNITED', MV.CX, MV.CY - 200,
-              { size: 18, color: MV.C.cyan, alpha: 0.5 });
+
+            /* 纠缠舞：半径收紧 + 角速度 ×2.2（“So deeply”） */
+            var tight = MV.smoothstep(MV.clamp((t - tDeep) / 1.8, 0, 1));
+            var rOrb = MV.lerp(90, 26, tight);
+            var w0 = 2.4, w1 = w0 * 2.2, DUR = 1.8;
+            var s = t - tDeep;
+            var u = MV.clamp(s / DUR, 0, 1);
+            /* smoothstep 速度剖面的解析积分：相位连续可导（预览跳转/截图安全） */
+            var F = (s <= 0) ? 0 : (s >= DUR ? DUR * 0.5 : DUR * (u * u * u - u * u * u * u * 0.5));
+            var ph = w0 * (t - tMerge) + (w1 - w0) * F;
+
+            var rrR = rOrb * (1 + Math.sin(t * 1.6) * 0.05);
+            var rrB = rOrb * (1 + Math.sin(t * 1.6 + 2.4) * 0.05);
+            var ayR = ph, ayB = ph + Math.PI;
+            var xr2 = MV.CX + Math.cos(ayR) * rrR;
+            var yr2 = MV.CY + Math.sin(ayR) * rrR * 0.94;
+            var xb2 = MV.CX + Math.cos(ayB) * rrB;
+            var yb2 = MV.CY + Math.sin(ayB) * rrB * 0.94;
+
+            /* 螺旋尾迹（加色发光，三层由淡到亮） */
+            ctx.save();
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.lineCap = 'round';
+            var dAng = 0.11 + 0.17 * tight;
+            var dR = 1.5 + 0.6 * tight;
+            var wob = 2 + 4 * tight;
+            trailArc(ctx, MV.CX, MV.CY, ayR, rrR, dAng, dR, wob, 0, 40, MV.RGB.red, 0.10, 5.0);
+            trailArc(ctx, MV.CX, MV.CY, ayR, rrR, dAng, dR, wob, 0, 22, MV.RGB.red, 0.20, 3.0);
+            trailArc(ctx, MV.CX, MV.CY, ayR, rrR, dAng, dR, wob, 0, 11, MV.RGB.red, 0.42, 1.7);
+            trailArc(ctx, MV.CX, MV.CY, ayB, rrB, dAng, dR, wob, 0, 40, MV.RGB.blue, 0.10, 5.0);
+            trailArc(ctx, MV.CX, MV.CY, ayB, rrB, dAng, dR, wob, 0, 22, MV.RGB.blue, 0.20, 3.0);
+            trailArc(ctx, MV.CX, MV.CY, ayB, rrB, dAng, dR, wob, 0, 11, MV.RGB.blue, 0.42, 1.7);
+            ctx.restore();
+
+            /* 纠缠细线（两粒子之间的牵连） */
+            MV.line(ctx, xr2, yr2, xb2, yb2, MV.C.white, 1, 0.08 + 0.10 * tight);
+
+            /* 深深入髓：缓慢外扩的红蓝深度环 */
+            if (t > tDeep) {
+              for (i = 0; i < 4; i++) {
+                var dp = ((t - tDeep) * 150 + i * 96) % 430;
+                MV.ring(ctx, MV.CX, MV.CY, dp, i % 2 ? MV.C.red : MV.C.blue, 1.2,
+                  0.16 * (1 - dp / 430));
+              }
+            }
+
+            /* 粒子本体：红色的我 + 蓝色的你 */
+            MV.drawMe(ctx, xr2, yr2, 6.5, 0.95, { tint: MV.RGB.red, glow: 1.2 });
+            MV.drawMe(ctx, xb2, yb2, 6.5, 0.95, { tint: MV.RGB.blue, glow: 1.2 });
+
+            /* 合并标签（低调） */
+            MV.text(ctx, 'UNITED', MV.CX, MV.CY - 212,
+              { size: 16, color: MV.C.white, alpha: 0.32 * MV.clamp(ct / 0.8, 0, 1) });
           }
         }
 
-        /* ---------- “我”的光点 ---------- */
-        var rr = 7 + env.low * 5 + beat.pulse * 4;
-        MV.drawMe(ctx, MV.CX, MV.CY, rr, 1, { glow: 0.8 });
+        /* ---------- “我”的光点：与红蓝粒子合体后淡出 ---------- */
+        var meK = 1 - MV.smoothstep(MV.clamp((t - (tUnite + 0.25)) / 0.85, 0, 1));
+        if (meK > 0.02) {
+          var rr = (7 + env.low * 5 + beat.pulse * 4) * (0.35 + 0.65 * meK);
+          MV.drawMe(ctx, MV.CX, MV.CY, rr, meK, { glow: 0.8 });
+        }
         ctx.restore(); /* 眩晕变换结束 */
 
-        /* ---------- 致盲黑幕（最后覆盖） ---------- */
-        if (blind > 0.01) {
+        /* ---------- 致盲：整屏去饱和变灰 + 压暗（最后覆盖，贯穿整句歌词） ---------- */
+        var blindK = blindAt(t);
+        if (blindK > 0.01) {
+          if (satOK) {
+            try {
+              ctx.save();
+              ctx.globalCompositeOperation = 'saturation';
+              ctx.globalAlpha = blindK;
+              ctx.fillStyle = '#808080';       /* 零饱和色：抽走画面色彩 */
+              ctx.fillRect(0, 0, MV.W, MV.H);
+              ctx.restore();
+            } catch (err) {
+              satOK = false;                    /* 环境不支持合成模式则永久退化 */
+            }
+          }
+          if (!satOK) {
+            /* 退化方案：普通灰色叠加（仍是灰调，而非纯黑） */
+            ctx.save();
+            ctx.globalAlpha = 0.72 * blindK;
+            ctx.fillStyle = '#6e8096';
+            ctx.fillRect(0, 0, MV.W, MV.H);
+            ctx.restore();
+          }
+          /* 灰雾薄纱：让“被蒙住”的感觉偏灰而非纯黑 */
           ctx.save();
-          ctx.globalAlpha = 0.94 * blind;
+          ctx.globalAlpha = 0.15 * blindK;
+          ctx.fillStyle = '#8894a4';
+          ctx.fillRect(0, 0, MV.W, MV.H);
+          ctx.restore();
+          /* 压暗层（两种方案通用） */
+          ctx.save();
+          ctx.globalAlpha = 0.55 * blindK;
           ctx.fillStyle = '#000';
           ctx.fillRect(0, 0, MV.W, MV.H);
           ctx.restore();
