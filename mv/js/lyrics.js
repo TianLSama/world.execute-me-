@@ -83,7 +83,8 @@ window.MV = window.MV || {};
       if (s.type === 'final') a = 1; /* final 的文字在中央，由弹出物自行淡出 */
 
       this.enEl.style.opacity = a;
-      this.zhEl.style.opacity = a;
+      /* #lyric-zh 永不显示文本：保持透明，画面上零中文 */
+      this.zhEl.style.opacity = 0;
       this.repeatEl.style.opacity = a;
 
       if (s.type === 'normal') this._updateNormal(t, s);
@@ -116,9 +117,9 @@ window.MV = window.MV || {};
           this.enEl.appendChild(d);
           this._parts.push({ el: d, t: p.t });
         }
-        this.zhEl.textContent = s.zh;
+        /* 不再填充中文：zh 行始终为空 */
       } else if (s.type === 'repeat') {
-        this.zhEl.textContent = s.zh;
+        /* repeat 层仅显示英文，中文不绘制 */
       } else if (s.type === 'speech') {
         var root = document.createElement('div');
         root.id = 'speech-line';

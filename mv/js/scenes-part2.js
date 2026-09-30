@@ -23,15 +23,90 @@ window.MV = window.MV || {};
     var meta = { stars: 0.4, grid: 0.04 };
     var pm = MV.partMap(88.5, 103.4);
     var pairs = [
-      { a: 'F', b: 'M', t: pm['To F to M'] || 90.2 },
-      { a: 'AM', b: 'PM', t: pm['From AM to PM'] || 93.95 },
-      { a: 'S', b: 'M', t: pm['To S to M'] || 97.74 }
+      { a: '♀', b: '♂', ka: 'sym', kb: 'sym', t: pm['To F to M'] || 90.2 },
+      { a: '', b: '', ka: 'sun', kb: 'moon', t: pm['From AM to PM'] || 93.95 },
+      { a: 'S', b: 'M', ka: 'text', kb: 'text', t: pm['To S to M'] || 97.74 }
     ];
     var tTrance = pm['The trance the trance'] || 101.47;
     var P = MV.RGB.purple;
     /* “我”的轨迹（迹线/残影） */
     var HIST = 26;
     var hx = new Float32Array(HIST), hy = new Float32Array(HIST), hn = 0, hHead = 0;
+
+    /* 符号字体栈：♀♂ΩΔ 等符号必须用带符号字形的字体，否则显示豆腐块 */
+    var SYM_FONT = '110px "Segoe UI Symbol","Microsoft YaHei",sans-serif';
+    /* 复刻 MV.text 的辉光/透明度行为，但使用自定义原始字体（MV.text 只接受 size+cjk 开关） */
+    function symGlyph(ctx, str, x, y, alpha, glow) {
+      if (alpha <= 0.005) return;
+      ctx.save();
+      ctx.font = SYM_FONT;
+      ctx.fillStyle = MV.C.purple;
+      ctx.globalAlpha = MV.clamp(alpha, 0, 1);
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      if (glow) { ctx.shadowColor = MV.C.purple; ctx.shadowBlur = glow; }
+      ctx.fillText(str, x, y);
+      ctx.restore();
+    }
+    /* 线描太阳：圆 r=50 + 12 条放射刻度 */
+    function drawSun(ctx, x, y, alpha, glow) {
+      if (alpha <= 0.005) return;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.globalAlpha = MV.clamp(alpha, 0, 1);
+      if (glow) { ctx.shadowColor = MV.C.purple; ctx.shadowBlur = glow; }
+      MV.ring(ctx, 0, 0, 50, MV.C.purple, 3.5, MV.clamp(alpha, 0, 1));
+      ctx.strokeStyle = MV.C.purple;
+      ctx.lineWidth = 3.5;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      for (var i = 0; i < 12; i++) {
+        var a = i * TAU / 12;
+        ctx.moveTo(Math.cos(a) * 58, Math.sin(a) * 58);
+        ctx.lineTo(Math.cos(a) * 72, Math.sin(a) * 72);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+    /* 线描月牙：外圆 r=52 与偏移 +20 的“咬”圆 r=44 求交，两段弧相减 */
+    var MOON_R1 = 52, MOON_R2 = 44, MOON_DX = 20;
+    var MOON_IA = (MOON_DX * MOON_DX + MOON_R1 * MOON_R1 - MOON_R2 * MOON_R2) / (2 * MOON_DX);
+    var MOON_IH = Math.sqrt(MOON_R1 * MOON_R1 - MOON_IA * MOON_IA);
+    var MOON_A1 = Math.atan2(MOON_IH, MOON_IA);            /* 外圆交点角 */
+    var MOON_A2 = Math.atan2(MOON_IH, MOON_IA - MOON_DX);  /* 咬圆交点角 */
+    function drawMoon(ctx, x, y, alpha, glow) {
+      if (alpha <= 0.005) return;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.globalAlpha = MV.clamp(alpha, 0, 1);
+      if (glow) { ctx.shadowColor = MV.C.purple; ctx.shadowBlur = glow; }
+      ctx.strokeStyle = MV.C.purple;
+      ctx.lineWidth = 3.5;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.arc(0, 0, MOON_R1, -MOON_A1, MOON_A1, true);    /* 外圆沿左侧长弧 */
+      ctx.arc(MOON_DX, 0, MOON_R2, MOON_A2, -MOON_A2, false); /* 咬圆内凹弧（经左侧回到起点） */
+      ctx.closePath();
+      ctx.stroke();
+      /* 2 颗细小星芒 */
+      var stx = [40, -62], sty = [-70, 58];
+      for (var i = 0; i < 2; i++) {
+        ctx.beginPath();
+        ctx.moveTo(stx[i] - 7, sty[i]); ctx.lineTo(stx[i] + 7, sty[i]);
+        ctx.moveTo(stx[i], sty[i] - 7); ctx.lineTo(stx[i], sty[i] + 7);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+    /* 按 side('a'|'b') 取该侧字形类型并绘制 */
+    function sideGlyph(ctx, pr, side, x, y, alpha, glow) {
+      var kind = (side === 'a') ? pr.ka : pr.kb;
+      if (kind === 'sym') symGlyph(ctx, pr[side], x, y, alpha, glow);
+      else if (kind === 'sun') drawSun(ctx, x, y, alpha, glow);
+      else if (kind === 'moon') drawMoon(ctx, x, y, alpha, glow);
+      else MV.text(ctx, pr[side], x, y,
+        { size: 110, color: MV.C.purple, alpha: alpha, glow: glow });
+    }
 
     function pushHist(x, y) {
       hx[hHead] = x; hy[hHead] = y;
@@ -60,15 +135,15 @@ window.MV = window.MV || {};
         ctx.scale(breath, breath);
         ctx.translate(-MV.CX, -MV.CY);
 
-        /* 背景漂浮字形（紫色，极淡） */
+        /* 背景漂浮字形（紫色，极淡）：改用符号字体栈以正确渲染 ♀♂ */
         ctx.save();
-        ctx.font = '40px ' + MV.FONT_MONO;
+        ctx.font = '40px "Segoe UI Symbol","Microsoft YaHei",sans-serif';
         ctx.fillStyle = MV.rgba(P, 0.07);
         ctx.textAlign = 'center';
         for (i = 0; i < 12; i++) {
           var gx = 120 + i * 155 + Math.sin(t * 0.3 + i * 1.3) * 34;
           var gy = ((t * 26 + MV.hash(i * 7.7) * 1400) % 1400) - 120;
-          var ch = 'FMSΩΔ'[(i + Math.floor(t * 0.7)) % 5];
+          var ch = '♀♂SΩΔ'[(i + Math.floor(t * 0.7)) % 5];
           ctx.fillText(ch, gx, gy);
         }
         ctx.restore();
@@ -89,26 +164,22 @@ window.MV = window.MV || {};
             /* 余晖：极淡的静止字形 */
             continue;
           }
-          /* 拖尾残影 */
+          /* 拖尾残影（同样按字形类型分派：符号 / 日 / 月 / 文字） */
           for (k = 1; k <= 3; k++) {
             var px1 = MV.lerp(x1, MV.CX - 430, k * 0.07);
             var px2 = MV.lerp(x2, MV.CX + 430, k * 0.07);
-            MV.text(ctx, p < 0.5 ? pr.a : pr.b, px1, MV.CY,
-              { size: 110, color: MV.C.purple, alpha: aMain * 0.10 / k });
-            MV.text(ctx, p < 0.5 ? pr.b : pr.a, px2, MV.CY,
-              { size: 110, color: MV.C.purple, alpha: aMain * 0.10 / k });
+            sideGlyph(ctx, pr, p < 0.5 ? 'a' : 'b', px1, MV.CY, aMain * 0.10 / k, 0);
+            sideGlyph(ctx, pr, p < 0.5 ? 'b' : 'a', px2, MV.CY, aMain * 0.10 / k, 0);
           }
           ctx.save();
           ctx.translate(x1, MV.CY);
           ctx.scale(sxf, 1);
-          MV.text(ctx, p < 0.5 ? pr.a : pr.b, 0, 0,
-            { size: 110, color: MV.C.purple, alpha: aMain * 0.95, glow: 22 });
+          sideGlyph(ctx, pr, p < 0.5 ? 'a' : 'b', 0, 0, aMain * 0.95, 22);
           ctx.restore();
           ctx.save();
           ctx.translate(x2, MV.CY);
           ctx.scale(sxf, 1);
-          MV.text(ctx, p < 0.5 ? pr.b : pr.a, 0, 0,
-            { size: 110, color: MV.C.purple, alpha: aMain * 0.95, glow: 22 });
+          sideGlyph(ctx, pr, p < 0.5 ? 'b' : 'a', 0, 0, aMain * 0.95, 22);
           ctx.restore();
           /* 交换中轴线 */
           if (Math.abs(p - 0.5) < 0.2) {
@@ -167,10 +238,13 @@ window.MV = window.MV || {};
     var meta = { stars: 0.7, grid: 0.1 };
     var pm = MV.partMap(103.4, 110.91);
     var tVib = pm['VIBRATIONS'] || 106.29;
+    var tPre = pm['If I can feel your'] || 104.20;
     var tComp = pm['COMPLETION'] || 110.22;
     var parts = new MV.Particles(1200);
     var rings = [];
     var lastBeat = -1;
+    var vibFired = false;    /* VIBRATIONS 震屏只触发一次 */
+    var preFired = false;    /* 预震只触发一次 */
     var GLYPH = '01#@%&*+=<>/\\ABCDEF';
 
     function ribbon(ctx, t, ang, dir, color, seed) {
@@ -198,9 +272,15 @@ window.MV = window.MV || {};
         parts.clear();
         rings.length = 0;
         lastBeat = -1;
+        vibFired = false;
+        preFired = false;
       },
       exit: function () { parts.clear(); rings.length = 0; },
       update: function (t, dt, env, beat) {
+        /* VIBRATIONS 全屏震屏：跨过时刻只触发一次；时间回退超过 2.5s 时复位标志（支持回跳/预览） */
+        if (t < tVib - 2.5) { vibFired = false; preFired = false; }
+        if (!preFired && t >= tPre) { preFired = true; MV.FX.shake(12, 0.6); }
+        if (!vibFired && t >= tVib) { vibFired = true; MV.FX.shake(30, 1.7); }
         meta.grid = 0.09 + env.low * 0.13;
         if (beat.idx !== lastBeat) {
           lastBeat = beat.idx;
@@ -659,54 +739,159 @@ window.MV = window.MV || {};
   });
 
   /* ============================================================
-   * 12. storm —— 数据风暴
+   * 12. storm —— 数据风暴：级联错误弹窗 + 网格涟漪 + 坍缩收束
    * ============================================================ */
   MV.registerScene('storm', function (api) {
     var t0 = api.t0;
     var meta = { stars: 0.5, grid: 0 };
     var T1 = 147.66;              /* 场景结束（坍缩完成） */
-    var parts = new MV.Particles(900);
-    var lastBeat = -1;
+    var DW = 400, DH = 220;       /* 弹窗尺寸 */
 
-    function emit(n, speedMul, t) {
-      for (var i = 0; i < n; i++) {
-        var fromTop = MV.hash(i * 3.1 + Math.floor(t * 31) * 7.7) > 0.45;
-        var px = fromTop ? MV.hash(i * 7.3 + t) * MV.W : -120;
-        var py = fromTop ? -80 : MV.hash(i * 5.9 + t) * MV.H * 0.7;
-        var sp = (600 + MV.hash(i * 9.7) * 900) * speedMul;
-        parts.spawn(px, py, sp, sp * 0.42,
-          0.9 + MV.hash(i * 11.3) * 0.8, 2 + MV.hash(i * 13.1) * 3, i);
+    /* ---------- 注册期：确定性文本池（渲染期零随机） ---------- */
+    var TITLES = ['SYSTEM FAULT', 'EXECUTION ERROR'];
+    var BODIES = ['ARGUMENT INVALID', 'SEGMENTATION FAULT', 'NaN DETECTED',
+      'PARAM OUT OF RANGE', 'ILLEGAL OPCODE', 'DIV BY ZERO', '0xDEADBEEF', 'REFERENCE LOST'];
+
+    function errTitle(k) {
+      if (MV.hash(k * 13.7 + 2.2) < 0.55) {
+        return 'ERROR 0x' + MV.hex(Math.floor(MV.hash(k * 7.31 + 0.77) * 0x10000), 4);
       }
+      return TITLES[Math.floor(MV.hash(k * 5.11 + 9.4) * TITLES.length)];
     }
+    function pickBody(k, n) {
+      return BODIES[Math.floor(MV.hash(k * 3.17 + n * 11.9 + 4.4) * BODIES.length)];
+    }
+
+    /* 生成时刻表：场景起点起每拍一个；超过 60% 后每个半拍再补一个 */
+    var spawnT = [];
+    (function buildSchedule() {
+      var beats = MV_DATA.beats;
+      var beatDur = 60 / MV_DATA.bpm;
+      var tAccel = t0 + 0.6 * (T1 - t0);
+      for (var i = 0; i < beats.length; i++) {
+        var b = beats[i];
+        if (b < t0 - 0.001) continue;
+        if (b > T1) break;
+        spawnT.push(b);
+        if (b >= tAccel) {
+          var nb = (i + 1 < beats.length) ? beats[i + 1] : (b + beatDur);
+          var half = (b + nb) * 0.5;
+          if (half < T1) spawnT.push(half);
+        }
+      }
+    })();
+
+    /* 弹窗元数据：位置/旋转/配色/文本全部由序号 k 确定性派生 */
+    function makeDialog(k, st) {
+      var y = 90 + Math.floor(k / 4) * 270;
+      if (y > MV.H - 250) y = MV.H - 250;   /* 溢出排堆叠在底部 */
+      return {
+        k: k,
+        st: st,
+        x: 70 + (k % 4) * 430 + MV.hashS(k * 7.7 + 1.3) * 34,
+        y: y + MV.hashS(k * 3.9 + 5.1) * 22,
+        rot: MV.hashS(k * 9.1 + 6.6) * (Math.PI / 180),   /* ±1° */
+        cyan: MV.hash(k * 11.3 + 2.7) < 0.28,             /* ~28% 青色变体 */
+        title: errTitle(k),
+        b1: pickBody(k, 1),
+        b2: pickBody(k, 2)
+      };
+    }
+
+    /* 单个弹窗：线框窗口 + 弹入过冲 + 生成瞬间闪烁 + 末尾缩退汇向中心 */
+    function drawDialog(ctx, d, t, driftCol) {
+      var age = t - d.st;
+      if (age < 0) return;
+      var base = d.cyan ? MV.RGB.cyan : driftCol;
+
+      var eb = MV.easeOutBack(MV.clamp(age / 0.22, 0, 1));
+      var sc = 0.85 + 0.15 * eb;                  /* 0.85 → 1，含轻微过冲 */
+      var alpha = MV.clamp(age / 0.06, 0, 1);
+      if (age < 0.1) {                            /* 前 0.1s 确定性闪烁 */
+        alpha *= (MV.hash(Math.floor(age * 45) * 17.3 + d.k * 5.7) > 0.45) ? 1 : 0.32;
+      }
+      /* 末尾 1.5s：按各自延迟缩退/淡出并向中心迁移（衔接 execute 坍缩） */
+      var lag = MV.hash(d.k * 5.3 + 0.9) * 0.3;
+      var ck = MV.clamp((t - (T1 - 1.5 - lag)) / (1.35 - lag), 0, 1);
+      var ckE = MV.easeInCubic(ck);
+      if (ck > 0) {
+        sc *= (1 - 0.85 * ckE);
+        alpha *= (1 - ck);
+      }
+      if (sc <= 0.02 || alpha <= 0.01) return;
+
+      var cx = MV.lerp(d.x + DW * 0.5, MV.CX, ckE);
+      var cy = MV.lerp(d.y + DH * 0.5, MV.CY, ckE);
+      var hw = DW * 0.5, hh = DH * 0.5;
+
+      /* ---- 窗口层：整体旋转 ±1°（仅线框/底色/关闭键，文本单独绘制） ---- */
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(d.rot);
+      ctx.scale(sc, sc);
+      ctx.globalAlpha = alpha;
+      /* 窗底 */
+      ctx.fillStyle = 'rgba(10,13,20,0.88)';
+      ctx.fillRect(-hw, -hh, DW, DH);
+      /* 边框 */
+      ctx.strokeStyle = MV.rgba(base, 0.85);
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(-hw, -hh, DW, DH);
+      /* 标题栏分隔线 */
+      ctx.beginPath();
+      ctx.moveTo(-hw, -hh + 30);
+      ctx.lineTo(hw, -hh + 30);
+      ctx.strokeStyle = MV.rgba(base, 0.6);
+      ctx.stroke();
+      /* 关闭按钮 ×：两笔短划 */
+      ctx.strokeStyle = MV.rgba(base, 0.8);
+      ctx.beginPath();
+      ctx.moveTo(hw - 24, -hh + 9); ctx.lineTo(hw - 12, -hh + 21);
+      ctx.moveTo(hw - 12, -hh + 9); ctx.lineTo(hw - 24, -hh + 21);
+      ctx.stroke();
+      ctx.restore();
+
+      /* ---- 文本层：同位置同缩放但不旋转（±1° 目视不可辨；旋转字形栅格化在软件渲染下极慢） ---- */
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.scale(sc, sc);
+      ctx.globalAlpha = alpha;
+      ctx.font = '18px ' + MV.FONT_MONO;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = MV.rgba(base, 0.95);
+      ctx.fillText(d.title, -hw + 14, -hh + 16);
+      ctx.font = '19px ' + MV.FONT_MONO;
+      ctx.fillStyle = MV.rgba(MV.RGB.white, 0.75);
+      ctx.fillText(d.b1, -hw + 14, -hh + 78);
+      ctx.font = '17px ' + MV.FONT_MONO;
+      ctx.fillStyle = MV.rgba(MV.RGB.dim, 0.7);
+      ctx.fillText(d.b2, -hw + 14, -hh + 114);
+      ctx.restore();
+    }
+
+    var dialogs = [];
+    var idx = 0;          /* spawnT 消费游标 */
+    var lastBeat = -1;
 
     return {
       meta: meta,
-      enter: function () { parts.clear(); lastBeat = -1; },
-      exit: function () { parts.clear(); },
+      enter: function () { dialogs.length = 0; idx = 0; lastBeat = -1; },
+      exit: function () { dialogs.length = 0; idx = 0; },
       update: function (t, dt, env, beat) {
-        var isp = 0.7 + env.mid * 1.5 + env.high * 0.6;
-        var collapse = MV.clamp((t - (T1 - 1.5)) / 1.5, 0, 1);
-        if (t < T1 - 0.05) {
-          var rate = (300 * isp) * (1 - collapse * 0.75);
-          var n = Math.floor(rate * dt);
-          if (Math.random() < rate * dt - n) n++;
-          emit(n, isp * (1 - collapse * 0.3), t);
+        /* 回退守卫：时间跳到过去时清空并按需重建（弹窗完全由 k 决定，重建结果一致） */
+        var lastSt = dialogs.length ? dialogs[dialogs.length - 1].st : -Infinity;
+        if (t < lastSt - 0.001) { dialogs.length = 0; idx = 0; }
+        while (idx < spawnT.length && t >= spawnT[idx]) {
+          dialogs.push(makeDialog(idx, spawnT[idx]));
+          idx++;
         }
         if (beat.idx !== lastBeat) {
           lastBeat = beat.idx;
           if (beat.isBar) {
-            MV.FX.flash(beat.isBar ? MV.RGB.cyan : MV.RGB.white, 0.06 + env.high * 0.08, 0.3);
+            MV.FX.flash(MV.RGB.cyan, 0.06 + env.high * 0.08, 0.3);
           }
         }
-        parts.step(dt, function (ps, i, d) {
-          if (collapse > 0.01) {
-            /* 坍缩：向中心加速吸引 */
-            var dx = MV.CX - ps.x[i], dy = MV.CY - ps.y[i];
-            var dist = Math.max(Math.sqrt(dx * dx + dy * dy), 40);
-            ps.vx[i] += dx / dist * 2600 * collapse * d;
-            ps.vy[i] += dy / dist * 2600 * collapse * d;
-          }
-        });
       },
       draw: function (ctx, t, env, beat) {
         var i;
@@ -718,9 +903,9 @@ window.MV = window.MV || {};
           ? MV.mix(MV.RGB.red, MV.RGB.purple, mk * 2)
           : MV.mix(MV.RGB.purple, MV.RGB.cyan, (mk - 0.5) * 2);
 
-        /* 涟漪网格（自绘，行水波状） */
+        /* 涟漪网格（自绘，行水波状）：整体压暗到原来的 0.6，让弹窗成为主体 */
         ctx.save();
-        ctx.strokeStyle = MV.rgba(col, (0.10 + env.mid * 0.07) * (1 - collapse * 0.5));
+        ctx.strokeStyle = MV.rgba(col, (0.06 + env.mid * 0.042) * (1 - collapse * 0.5));
         ctx.lineWidth = 1;
         ctx.beginPath();
         var gs = 110 * (1 - collapse * 0.55);
@@ -745,11 +930,8 @@ window.MV = window.MV || {};
         ctx.stroke();
         ctx.restore();
 
-        /* 高速流线（加色混合，让红/青在暗底上更通透） */
-        ctx.save();
-        ctx.globalCompositeOperation = 'lighter';
-        parts.drawStreak(ctx, col, 0.95, 0.028);
-        ctx.restore();
+        /* 级联错误弹窗：按生成顺序绘制（后生成的在最上层） */
+        for (i = 0; i < dialogs.length; i++) drawDialog(ctx, dialogs[i], t, col);
 
         /* 节拍环 */
         if (t < T1 - 1.6) {

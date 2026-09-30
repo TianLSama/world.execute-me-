@@ -131,24 +131,176 @@ window.MV = window.MV || {};
     var tBeamEnd = tTrapped - 1.2; /* 光束端头应在此刻抵达近中线 */
     var pulses = [];
 
+    /* ---------- KCl / 注射器：背景化学示意（显示窗 ≈3.5s） ---------- */
+    var tK = pm['If I can give them all the'] || 162.63;
+    var K_DUR = 3.5;
+    var drops = [];              /* 针尖滴落的液滴（世界坐标） */
+    var lastDropBeat = -1;
+    var SY_X = 1450, SY_Y = 560, SY_ANG = -Math.PI / 6;   /* 注射器位置与 -30° 倾角 */
+    var SY_TIPX = SY_X + Math.cos(SY_ANG) * 298;          /* 针尖世界坐标 */
+    var SY_TIPY = SY_Y + Math.sin(SY_ANG) * 298;
+
+    /* 圆角矩形路径（不依赖 ctx.roundRect 的可用性） */
+    function rrect(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.arcTo(x + w, y, x + w, y + r, r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+      ctx.lineTo(x + r, y + h);
+      ctx.arcTo(x, y + h, x, y + h - r, r);
+      ctx.lineTo(x, y + r);
+      ctx.arcTo(x, y, x + r, y, r);
+      ctx.closePath();
+    }
+
+    /* 背景化学示意：KCl 分子式 + 注射器线描（在 draw 最前调用 → 位于所有光束/光点之下） */
+    function drawChem(ctx, t) {
+      var age = t - tK;
+      if (age < -0.3 || age > K_DUR + 0.25) return;
+      var aIn = MV.clamp(age / 0.4, 0, 1);                   /* 淡入 0.4s */
+      var aOut = MV.clamp((tK + K_DUR - t) / 0.5, 0, 1);     /* 淡出 0.5s */
+      var aa = Math.min(aIn, aOut) * 0.5;                    /* 整体透明度上限 0.5 */
+      if (aa <= 0.005) return;
+      var prog = MV.clamp(age / 2.6, 0, 1);                  /* 推杆推进进度 */
+      var paleRed = MV.mix(MV.RGB.red, MV.RGB.white, 0.55);
+
+      /* ---- 左中下：KCl 化学式（避开画面中心） ---- */
+      ctx.save();
+      MV.text(ctx, 'KCl', 500, 686,
+        { size: 160, color: MV.rgba(MV.mix(MV.RGB.white, MV.RGB.red, 0.3), 1), alpha: aa * 0.9, glow: 26 });
+      /* 离子式 K⁺ Cl⁻：上标用小字号手绘，避免字体缺字成豆腐块 */
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.font = '46px ' + MV.FONT_MONO;
+      ctx.fillStyle = MV.rgba(MV.RGB.white, aa * 0.8);
+      ctx.fillText('K', 420, 792);
+      ctx.fillText('Cl', 496, 792);
+      ctx.font = '24px ' + MV.FONT_MONO;
+      ctx.fillStyle = MV.rgba(paleRed, aa);
+      ctx.fillText('+', 452, 774);
+      ctx.fillText('-', 556, 774);
+      /* 键线 K — Cl */
+      MV.line(ctx, 400, 850, 600, 850, MV.C.red, 1, aa * 0.5);
+      MV.text(ctx, 'K', 372, 850, { size: 28, color: MV.C.white, alpha: aa * 0.65 });
+      MV.text(ctx, 'Cl', 630, 850, { size: 28, color: MV.C.white, alpha: aa * 0.65 });
+      /* 英文注释（等宽大写小字） */
+      MV.text(ctx, 'POTASSIUM CHLORIDE', 500, 914, { size: 19, color: MV.C.white, alpha: aa * 0.55 });
+      MV.text(ctx, 'LETHAL INJECTION', 500, 944, { size: 19, color: MV.C.red, alpha: aa * 0.8 });
+      ctx.restore();
+
+      /* ---- 右侧：注射器线描 ---- */
+      ctx.save();
+      ctx.translate(SY_X, SY_Y);
+      ctx.rotate(SY_ANG);
+      ctx.lineCap = 'round';
+      /* 针筒：圆角矩形 300×90 */
+      rrect(ctx, -150, -45, 300, 90, 12);
+      ctx.strokeStyle = MV.rgba(MV.RGB.white, aa * 0.9);
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      /* 药液：推杆面之前的液体，随推进变短（推杆行程 0.15 → 0.85） */
+      var F = MV.lerp(0.15, 0.85, prog);
+      var pf = -150 + 300 * F;
+      ctx.save();
+      rrect(ctx, -150, -45, 300, 90, 12);
+      ctx.clip();
+      ctx.fillStyle = MV.rgba(MV.mix(MV.RGB.red, MV.RGB.pink, 0.35), aa * 0.32);
+      ctx.fillRect(pf, -45, 150 - pf, 90);
+      ctx.fillStyle = MV.rgba(MV.RGB.red, aa * 0.75);
+      ctx.fillRect(pf - 1, -45, 2, 90);
+      ctx.restore();
+      /* 6 条刻度 */
+      ctx.strokeStyle = MV.rgba(MV.RGB.white, aa * 0.45);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      for (var tk = 1; tk <= 6; tk++) {
+        var tx = -150 + 300 * tk / 7;
+        ctx.moveTo(tx, -45); ctx.lineTo(tx, -45 + 15);
+      }
+      ctx.stroke();
+      /* 推杆 + 拇指头 + 尾部法兰 */
+      var headX = -300 + 170 * F;
+      ctx.strokeStyle = MV.rgba(MV.RGB.cyan, aa * 0.8);
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(headX, 0); ctx.lineTo(pf, 0);
+      ctx.stroke();
+      ctx.lineWidth = 2;
+      rrect(ctx, headX - 18, -34, 18, 68, 6);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(-150, -54); ctx.lineTo(-150, 54);
+      ctx.stroke();
+      /* 针头 + 针尖 */
+      ctx.beginPath();
+      ctx.moveTo(150, 0); ctx.lineTo(292, 0);
+      ctx.moveTo(150, -10); ctx.lineTo(150, 10);
+      ctx.stroke();
+      ctx.fillStyle = MV.rgba(MV.RGB.cyan, aa * 0.9);
+      ctx.fillRect(292, -1.5, 6, 3);
+      ctx.restore();
+
+      /* 针尖滴落的液滴（世界坐标，重力下落） */
+      for (var di = 0; di < drops.length; di++) {
+        var dp = drops[di];
+        MV.line(ctx, dp.x, dp.y - 10, dp.x, dp.y, MV.C.red, 2, aa * 0.5);
+        ctx.save();
+        ctx.globalAlpha = aa * 0.85;
+        ctx.fillStyle = MV.rgba(MV.RGB.red, 0.9);
+        ctx.beginPath();
+        ctx.arc(dp.x, dp.y, dp.r, 0, TAU);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
     function onPart(s, i, part) {
       if (part.en === 'EXECUTION') pulses.push({ t: MV.time(), hit: false });
     }
 
     return {
       meta: meta,
-      enter: function () { pulses.length = 0; api.onPart(onPart); },
-      exit: function () { pulses.length = 0; },
+      enter: function () { pulses.length = 0; drops.length = 0; lastDropBeat = -1; api.onPart(onPart); },
+      exit: function () { pulses.length = 0; drops.length = 0; },
       update: function (t, dt, env, beat) {
         var cp = MV.clamp((t - tTrapped) / 2.2, 0, 1);
         meta.grid = 0.06 * (1 - cp * 0.85);
         for (var i = pulses.length - 1; i >= 0; i--) {
           if (t - pulses[i].t > 1.6) pulses.splice(i, 1);
         }
+        /* KCl 窗口内：随节拍从针尖落液滴（回退超过 1s 时清空，支持回跳/预览） */
+        if (t < tK - 1) { drops.length = 0; lastDropBeat = -1; }
+        if (t >= tK && t <= tK + K_DUR && beat.idx !== lastDropBeat) {
+          lastDropBeat = beat.idx;
+          if (drops.length < 12) {
+            var hSeed = MV.hash(beat.idx * 4.7 + 3.3);
+            drops.push({
+              x: SY_TIPX + MV.hashS(beat.idx * 2.9) * 6,
+              y: SY_TIPY + MV.hashS(beat.idx * 6.1 + 1) * 4,
+              vx: MV.hashS(beat.idx * 8.3) * 18,
+              vy: 40 + hSeed * 40,
+              r: 3 + hSeed * 1.6,
+              life: 1.6
+            });
+          }
+        }
+        for (var dIdx = drops.length - 1; dIdx >= 0; dIdx--) {
+          var dpp = drops[dIdx];
+          dpp.vy += 620 * dt;
+          dpp.x += dpp.vx * dt;
+          dpp.y += dpp.vy * dt;
+          dpp.life -= dt;
+          if (dpp.life <= 0 || dpp.y > MV.H + 20) drops.splice(dIdx, 1);
+        }
       },
       draw: function (ctx, t, env, beat) {
         var i;
         var cp = MV.clamp((t - tTrapped) / 2.2, 0, 1);
+
+        /* 背景化学示意（KCl + 注射器）：先画 → 位于光束/冲撞波/光点之下 */
+        drawChem(ctx, t);
 
         /* 左红右青的二元对立：持续渐变 + 扫描线纹理 */
         ctx.save();
