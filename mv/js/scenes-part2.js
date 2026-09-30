@@ -108,6 +108,191 @@ window.MV = window.MV || {};
         { size: 110, color: MV.C.purple, alpha: alpha, glow: glow });
     }
 
+    /* ---------- 新增层：染色体刻度轨 / 轴心表盘 / 初段打字雨 / trance 预热 ---------- */
+    var RAIL_PAIRS = [
+      { x1: 250, x2: 315, seed: 1.7, tag: 'XX' },
+      { x1: 1605, x2: 1670, seed: 5.3, tag: 'XY' }
+    ];
+    var RAIL_Y0 = 210, RAIL_Y1 = 870, RAIL_TICK = 26;
+    var TYPE_STR = 'GENDER :: SWITCH';
+    var tType = t0 + 0.05;
+    var RAIN_N = 10;
+    var RAIN_CH = 'FM01';
+    var rainX = new Float32Array(RAIN_N);
+    var rainPh = new Float32Array(RAIN_N);
+    var rainSp = new Float32Array(RAIN_N);
+    (function () {
+      for (var i = 0; i < RAIN_N; i++) {
+        rainX[i] = 160 + i * 175;
+        rainPh[i] = MV.hash(i * 7.7 + 1.1) * 1500;
+        rainSp[i] = 90 + MV.hash(i * 3.3 + 5) * 150;
+      }
+    })();
+    var tBuild = 100.8;
+    var RIP_CH = 'FM01S';
+
+    /* 双 z 层背景字形：中层（更快更亮）+ 前景（超大极淡），制造纵深 */
+    function drawGlyphDepth(ctx, t) {
+      var i;
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = '58px "Segoe UI Symbol","Microsoft YaHei",sans-serif';
+      ctx.fillStyle = MV.rgba(P, 0.09);
+      for (i = 0; i < 9; i++) {
+        var gx = 90 + i * 215 + Math.sin(t * 0.45 + i * 2.1) * 46;
+        var gy = ((t * 62 + MV.hash(i * 9.9 + 3) * 1600) % 1600) - 200;
+        ctx.fillText('♀♂SΩΔ'.charAt((i * 2 + Math.floor(t * 0.9)) % 5), gx, gy);
+      }
+      ctx.font = '150px "Segoe UI Symbol","Microsoft YaHei",sans-serif';
+      ctx.fillStyle = MV.rgba(P, 0.045);
+      for (i = 0; i < 3; i++) {
+        var fx2 = ((t * 26 + MV.hash(i * 5.5 + 7) * 2400) % 2400) - 240;
+        ctx.fillText('♀♂Δ'.charAt(i), fx2, 250 + i * 310);
+      }
+      ctx.restore();
+    }
+
+    /* 染色体刻度轨：双轨线 + 带纹 + 双向滑动标记（全场景） */
+    function drawChromRails(ctx, t, alpha) {
+      if (alpha <= 0.01) return;
+      var i;
+      ctx.save();
+      ctx.globalAlpha = MV.clamp(alpha, 0, 1);
+      for (i = 0; i < RAIL_PAIRS.length; i++) {
+        var rp = RAIL_PAIRS[i];
+        ctx.strokeStyle = MV.rgba(P, 0.55);
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(rp.x1, RAIL_Y0); ctx.lineTo(rp.x1, RAIL_Y1);
+        ctx.moveTo(rp.x2, RAIL_Y0); ctx.lineTo(rp.x2, RAIL_Y1);
+        ctx.stroke();
+        /* 轨间染色体带纹：长度由确定性哈希决定 */
+        ctx.beginPath();
+        for (var y = RAIL_Y0; y <= RAIL_Y1; y += RAIL_TICK) {
+          var w = (MV.hash(rp.seed * 13 + y * 0.37) > 0.5) ? (rp.x2 - rp.x1) : (rp.x2 - rp.x1) * 0.45;
+          ctx.moveTo(rp.x1, y); ctx.lineTo(rp.x1 + w, y);
+        }
+        ctx.stroke();
+        /* 双向滑动标记 */
+        var span = RAIL_Y1 - RAIL_Y0;
+        var my1 = RAIL_Y0 + ((t * 34 + rp.seed * 190) % span);
+        var my2 = RAIL_Y0 + span - ((t * 21 + rp.seed * 137) % span);
+        ctx.strokeStyle = MV.C.white;
+        ctx.globalAlpha = MV.clamp(alpha * 0.9, 0, 1);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(rp.x1 - 9, my1); ctx.lineTo(rp.x2 + 9, my1);
+        ctx.moveTo(rp.x1 - 9, my2); ctx.lineTo(rp.x2 + 9, my2);
+        ctx.stroke();
+        ctx.globalAlpha = MV.clamp(alpha, 0, 1);
+        /* 顶部染色体标签（ASCII） */
+        ctx.font = '18px ' + MV.FONT_MONO;
+        ctx.fillStyle = MV.rgba(P, 0.8);
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(rp.tag, (rp.x1 + rp.x2) / 2, RAIL_Y0 - 26);
+      }
+      ctx.restore();
+    }
+
+    /* 轴心表盘：夹在三组字形交换之间，缓慢反向旋转的轴针 + 刻度 */
+    function drawAxisDial(ctx, t, alpha) {
+      if (alpha <= 0.01) return;
+      ctx.save();
+      ctx.translate(MV.CX, MV.CY);
+      ctx.globalAlpha = MV.clamp(alpha, 0, 1);
+      ctx.strokeStyle = MV.rgba(P, 0.5);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(0, 0, 238, 0, TAU);
+      ctx.stroke();
+      ctx.beginPath();
+      for (var i = 0; i < 24; i++) {
+        var a = i * TAU / 24;
+        var r1 = (i % 3 === 0) ? 228 : 234;
+        ctx.moveTo(Math.cos(a) * r1, Math.sin(a) * r1);
+        ctx.lineTo(Math.cos(a) * 246, Math.sin(a) * 246);
+      }
+      ctx.stroke();
+      var a1 = t * 0.35, a2 = -t * 0.23 + 1.1;
+      ctx.strokeStyle = MV.rgba(P, 0.9);
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a1) * 238, Math.sin(a1) * 238);
+      ctx.lineTo(-Math.cos(a1) * 238, -Math.sin(a1) * 238);
+      ctx.moveTo(Math.cos(a2) * 178, Math.sin(a2) * 178);
+      ctx.lineTo(-Math.cos(a2) * 178, -Math.sin(a2) * 178);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    /* 初段空档：打字标题 + F/M 二进制雨（88.58-90.2 的静默被填满） */
+    function drawOpening(ctx, t) {
+      var n = MV.typeCount(t, tType, TYPE_STR.length, 13);
+      var ta = MV.clamp(1 - (t - 90.8) / 1.6, 0, 1) * 0.55;
+      if (n > 0 && ta > 0.01) {
+        var shown = (n < TYPE_STR.length)
+          ? (TYPE_STR.slice(0, n) + ((Math.floor(t * 3) % 2 === 0) ? '_' : ' '))
+          : TYPE_STR;
+        MV.text(ctx, shown, MV.CX, 178, { size: 26, color: MV.C.purple, alpha: ta, glow: 10 });
+      }
+      var fade = MV.clamp(1 - (t - 90.6) / 1.4, 0, 1);
+      if (fade <= 0.01) return;
+      ctx.save();
+      ctx.font = '22px ' + MV.FONT_MONO;
+      ctx.fillStyle = MV.C.purple;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      var step = Math.floor(t * 7);
+      for (var c = 0; c < RAIN_N; c++) {
+        var head = ((t * rainSp[c] + rainPh[c]) % 1500) - 140;
+        for (var row = 0; row < 6; row++) {
+          var y = head - row * 54;
+          if (y < -40 || y > MV.H + 40) continue;
+          var ch = RAIN_CH.charAt(Math.floor(MV.hash(c * 13.7 + row * 3.1 + step) * 4));
+          ctx.globalAlpha = MV.clamp((0.20 - row * 0.02) * fade, 0, 0.25);
+          ctx.fillText(ch, rainX[c] + Math.sin(t * 0.6 + c) * 10, y);
+        }
+      }
+      ctx.restore();
+    }
+
+    /* trance 预热：内旋加速螺旋 + 向外扩散的字母涟漪（100.8 → 101.47） */
+    function drawBuildUp(ctx, t) {
+      var bp = MV.clamp((t - tBuild) / 2.4, 0, 1);
+      if (bp <= 0.001) return;
+      var i;
+      ctx.save();
+      ctx.fillStyle = MV.C.purple;
+      for (i = 0; i < 64; i++) {
+        var ph = i / 64;
+        var k = MV.clamp(bp * 1.35 - ph * 0.35, 0, 1);
+        var a = ph * TAU * 2 + t * (0.8 + k * 5.5);
+        var r = 60 + 820 * Math.pow(1 - k, 1.5);
+        ctx.globalAlpha = 0.22 * Math.sin(Math.PI * k) * bp;
+        ctx.fillRect(MV.CX + Math.cos(a) * r - 1.5, MV.CY + Math.sin(a) * r - 1.5, 3, 3);
+      }
+      ctx.restore();
+      ctx.save();
+      ctx.font = '18px ' + MV.FONT_MONO;
+      ctx.fillStyle = MV.C.purple;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      for (var j = 0; j < 4; j++) {
+        var rp = (t - tBuild) / 0.55 - j;
+        if (rp <= 0 || rp >= 1) continue;
+        var rr = 70 + MV.easeOutCubic(rp) * 430;
+        ctx.globalAlpha = (1 - rp) * 0.20;
+        for (var k2 = 0; k2 < 10; k2++) {
+          var aa = k2 * TAU / 10 + rp * 0.8;
+          ctx.fillText(RIP_CH.charAt((Math.floor(Math.abs(aa) * 3) + j) % RIP_CH.length),
+            MV.CX + Math.cos(aa) * rr, MV.CY + Math.sin(aa) * rr);
+        }
+      }
+      ctx.restore();
+    }
+
     function pushHist(x, y) {
       hx[hHead] = x; hy[hHead] = y;
       hHead = (hHead + 1) % HIST;
@@ -148,6 +333,15 @@ window.MV = window.MV || {};
         }
         ctx.restore();
 
+        /* 深层背景：中层 + 前景字形（z 纵深） */
+        drawGlyphDepth(ctx, t);
+        /* 染色体刻度轨（左右双轨 + 滑动标记） */
+        drawChromRails(ctx, t, MV.clamp((t - t0) / 0.6, 0, 1) * 0.42);
+        /* 轴心表盘：字形交换的中轴 */
+        drawAxisDial(ctx, t, 0.4 * MV.clamp((t - t0) / 0.6, 0, 1));
+        /* 初段空档：打字标题 + F/M 二进制雨 */
+        drawOpening(ctx, t);
+
         /* 三组字形对：滑动 + 镜像互换 */
         for (i = 0; i < pairs.length; i++) {
           var pr = pairs[i];
@@ -187,6 +381,9 @@ window.MV = window.MV || {};
               (0.2 - Math.abs(p - 0.5)) * 3);
           }
         }
+
+        /* trance 预热：螺旋收束 + 字母涟漪（让 101.47 之前也有运动） */
+        drawBuildUp(ctx, t);
 
         /* trance：催眠同心环 + 缓慢旋转刻度 */
         if (trance > 0.01) {
@@ -247,14 +444,15 @@ window.MV = window.MV || {};
     var preFired = false;    /* 预震只触发一次 */
     var GLYPH = '01#@%&*+=<>/\\ABCDEF';
 
-    function ribbon(ctx, t, ang, dir, color, seed) {
+    function ribbon(ctx, t, ang, dir, color, seed, stride) {
+      stride = stride || 2;
       var ca = Math.cos(ang), sa = Math.sin(ang);
       ctx.save();
       ctx.font = '20px ' + MV.FONT_MONO;
       ctx.fillStyle = MV.rgba(color, 0.42);
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      for (var i = -26; i <= 26; i += 2) {
+      for (var i = -26; i <= 26; i += stride) {
         var u = i * 40 * dir;
         var wob = Math.sin(u * 0.01 + t * 2.2 + seed) * 20;
         var x = MV.CX + ca * u - sa * wob;
@@ -262,6 +460,104 @@ window.MV = window.MV || {};
         if (x < -40 || x > MV.W + 40 || y < -40 || y > MV.H + 40) continue;
         var gi = Math.abs(Math.floor(i * 7.31 + seed * 13 + t * 14 + u)) % GLYPH.length;
         ctx.fillText(GLYPH.charAt(gi), x, y);
+      }
+      ctx.restore();
+    }
+
+    /* ---------- 新增层：蓄能计量 / 六边脉冲 / COMPLETION 收尾 / 四边频谱 ---------- */
+    /* 104.2 → VIBRATIONS：分段蓄能条 + 百分比读数 */
+    function drawChargeMeter(ctx, t, beat) {
+      var bp = MV.clamp((t - tPre) / (tVib - tPre), 0, 1);
+      if (bp <= 0.001) return;
+      var ease = MV.smoothstep(bp);
+      var x0 = MV.CX - 430, y = 162, w = 860, h = 14;
+      var segs = 36, inner = (w - 8) / segs;
+      ctx.save();
+      ctx.strokeStyle = MV.rgba(MV.RGB.cyan, 0.22 + beat.pulse * 0.08);
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x0, y - h * 0.5, w, h);
+      ctx.fillStyle = MV.C.cyan;
+      var lit = ease * segs;
+      for (var i = 0; i < segs; i++) {
+        if (i >= lit) break;
+        ctx.globalAlpha = MV.clamp(0.12 + 0.09 * MV.hash(i * 3.3 + 1.2) + beat.pulse * 0.05, 0, 0.25);
+        ctx.fillRect(x0 + 4 + i * inner, y - h * 0.5 + 3, inner - 3, h - 6);
+      }
+      ctx.restore();
+      MV.text(ctx, 'VIBRATION CHARGE', x0 - 14, y, { size: 16, color: MV.RGB.cyan, alpha: 0.45, align: 'right' });
+      MV.text(ctx, ('00' + Math.floor(ease * 100)).slice(-3) + '%', x0 + w + 14, y,
+        { size: 16, color: MV.RGB.cyan, alpha: 0.45, align: 'left' });
+    }
+
+    /* 蓄能期同心六边形脉冲（速度随蓄能进度提升） */
+    function drawHexPulses(ctx, t) {
+      var bp = MV.clamp((t - tPre) / (tVib - tPre), 0, 1);
+      if (bp <= 0.001 || t > tVib + 0.7) return;
+      var fade = MV.clamp(1 - (t - tVib) / 0.7, 0, 1);
+      var speed = 0.5 + bp * 0.95;
+      for (var i = 0; i < 5; i++) {
+        var p = ((t - tPre) * speed + i * 0.2) % 1;
+        var r = MV.easeOutCubic(p) * 700;
+        if (r < 2) continue;
+        ctx.save();
+        ctx.strokeStyle = MV.rgba(MV.RGB.purple, (1 - p) * 0.22 * fade);
+        ctx.lineWidth = 1.6;
+        MV.polyPath(ctx, MV.CX, MV.CY, r, 6, p * 1.2 + i);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    /* 109.6-110.9：闭合环段 + 汇聚轨道粒子 */
+    function drawCompletion(ctx, t) {
+      var win = MV.clamp((t - 109.6) / 1.3, 0, 1);
+      if (win <= 0.001) return;
+      var close = MV.easeOutCubic(MV.clamp((t - 109.7) / 1.1, 0, 1));
+      var gap = (1 - close) * 0.6;
+      ctx.save();
+      ctx.strokeStyle = MV.rgba(MV.RGB.white, 0.32);
+      ctx.lineWidth = 2.2;
+      for (var s = 0; s < 4; s++) {
+        var a0 = s * TAU / 4 + t * 0.35 + gap * 0.5;
+        var a1 = a0 + TAU / 4 - gap;
+        ctx.beginPath();
+        ctx.arc(MV.CX, MV.CY, 252, a0, a1);
+        ctx.stroke();
+      }
+      ctx.restore();
+      ctx.save();
+      ctx.fillStyle = MV.RGB.cyan;
+      for (var i = 0; i < 40; i++) {
+        var ph = i / 40;
+        var k = MV.clamp(win * 1.15 - ph * 0.15, 0, 1);
+        var r = MV.lerp(430, 192, MV.easeOutCubic(k));
+        var a = ph * TAU + t * (0.6 + 1.6 * win);
+        ctx.globalAlpha = MV.clamp(0.22 * win, 0, 0.25);
+        ctx.fillRect(MV.CX + Math.cos(a) * r - 1.5, MV.CY + Math.sin(a) * r - 1.5, 3, 3);
+      }
+      ctx.restore();
+    }
+
+    /* 四边频谱条（高频走上下，中频走左右） */
+    function drawPerimeter(ctx, t, env, beat) {
+      var i, v, sz;
+      ctx.save();
+      ctx.fillStyle = MV.C.cyan;
+      for (i = 0; i < 44; i++) {
+        var bx = (i + 0.5) * (MV.W / 44);
+        v = MV.hash(i * 3.1 + 0.4) * 0.5 + env.high * 0.5 + beat.barPulse * 0.3;
+        sz = 6 + v * 26;
+        ctx.globalAlpha = MV.clamp(0.08 + v * 0.10, 0, 0.25);
+        ctx.fillRect(bx - 3, 0, 6, sz);
+        ctx.fillRect(bx - 3, MV.H - sz, 6, sz);
+      }
+      for (i = 0; i < 20; i++) {
+        var by = (i + 0.5) * (MV.H / 20);
+        v = MV.hash(i * 5.7 + 9.1) * 0.5 + env.mid * 0.5 + beat.pulse * 0.25;
+        sz = 5 + v * 22;
+        ctx.globalAlpha = MV.clamp(0.06 + v * 0.09, 0, 0.25);
+        ctx.fillRect(0, by - 3, sz, 6);
+        ctx.fillRect(MV.W - sz, by - 3, sz, 6);
       }
       ctx.restore();
     }
@@ -310,9 +606,16 @@ window.MV = window.MV || {};
       },
       draw: function (ctx, t, env, beat) {
         var i;
+        /* 四边频谱条 */
+        drawPerimeter(ctx, t, env, beat);
         /* 反向旋转的两条数据丝带 */
         ribbon(ctx, t, t * 0.55, 1, MV.RGB.cyan, 3);
         ribbon(ctx, t, -t * 0.75 + 1.1, -1, MV.RGB.blue, 11);
+        /* 第二对反向丝带（低密度，紫/青） */
+        ribbon(ctx, t, -t * 0.55 + 2.2, -1, MV.RGB.purple, 7, 4);
+        ribbon(ctx, t, t * 0.75 + 3.3, 1, MV.RGB.cyan, 17, 4);
+        /* 蓄能期同心六边形脉冲 */
+        drawHexPulses(ctx, t);
 
         /* 六边形环 */
         for (i = 0; i < rings.length; i++) {
@@ -327,6 +630,9 @@ window.MV = window.MV || {};
           ctx.stroke();
           ctx.restore();
         }
+
+        /* 蓄能计量条（104.2 冲向 VIBRATIONS） */
+        drawChargeMeter(ctx, t, beat);
 
         /* VIBRATIONS：涟漪扭曲环 */
         if (t > tVib) {
@@ -349,6 +655,9 @@ window.MV = window.MV || {};
             ctx.restore();
           }
         }
+
+        /* COMPLETION 收尾：闭合环段 + 汇聚轨道粒子 */
+        drawCompletion(ctx, t);
 
         /* COMPLETION：闭合的圆环 */
         if (t > tComp - 0.6) {
@@ -391,6 +700,64 @@ window.MV = window.MV || {};
     for (var si = 0; si < leftParts.length; si++) stepT.push(leftParts[si].t);
     var tIso = pm['ISOLATION'] || 117.27;
     var drift = new MV.Particles(320);
+
+    /* ---------- 新增层：信号衰减条 / 断续链路 / ping 倒计时 ---------- */
+    var SIG_N = 24, SIG_X = 150, SIG_Y = 196, SIG_W = 430, SIG_H = 14;
+    var tLink = 115.5;
+    var LINK_N = 56;
+    var LINK_Y = 540, LINK_X0 = 1010, LINK_X1 = 1548;
+
+    /* 衰减的信号强度条：随每句 “You have left” 掉格 */
+    function drawSignalBar(ctx, t, step, iso) {
+      var a0 = MV.clamp((t - t0) / 0.4, 0, 1) * (1 - iso * 0.85);
+      if (a0 <= 0.01) return;
+      var s = MV.clamp(1 - 0.115 * step - (t - t0) / 16, 0, 1);
+      var lit = Math.round(s * SIG_N);
+      ctx.save();
+      ctx.strokeStyle = MV.rgba(MV.RGB.cyan, 0.22 * a0);
+      ctx.lineWidth = 1;
+      ctx.strokeRect(SIG_X, SIG_Y, SIG_W, SIG_H);
+      ctx.fillStyle = MV.C.cyan;
+      var sw = (SIG_W - 4) / SIG_N;
+      for (var i = 0; i < lit; i++) {
+        ctx.globalAlpha = MV.clamp((0.16 + MV.hash(i * 3.7 + 0.9) * 0.08) * a0, 0, 0.25);
+        ctx.fillRect(SIG_X + 2 + i * sw, SIG_Y + 2, sw - 2, SIG_H - 4);
+      }
+      ctx.restore();
+      MV.text(ctx, 'SIGNAL LINK', SIG_X, SIG_Y - 18, { size: 14, color: MV.RGB.cyan, alpha: 0.4 * a0, align: 'left' });
+      MV.text(ctx, ('00' + Math.floor(s * 100)).slice(-3) + '%', SIG_X + SIG_W, SIG_Y - 18,
+        { size: 14, color: MV.RGB.cyan, alpha: 0.4 * a0, align: 'right' });
+    }
+
+    /* 逐段断裂的点状链路（115.5 → ISOLATION 前完全断开） */
+    function drawLink(ctx, t, iso) {
+      if (t < tLink) return;
+      var lp = MV.clamp((t - tLink) / (tIso - tLink), 0, 1);
+      var alpha = 0.24 * (1 - iso * 0.8);
+      if (alpha <= 0.01) return;
+      var keep = 1 - lp;
+      ctx.save();
+      ctx.fillStyle = MV.C.cyan;
+      for (var i = 0; i < LINK_N; i++) {
+        if (MV.hash(i * 7.3 + 2.2) > keep + 0.06) continue;
+        var x = MV.lerp(LINK_X0, LINK_X1, i / (LINK_N - 1));
+        var tw = 0.6 + 0.4 * Math.sin(t * 5 + i * 0.9);
+        ctx.globalAlpha = MV.clamp(alpha * tw, 0, 0.25);
+        ctx.fillRect(x - 1.5, LINK_Y - 1.5, 3, 3);
+      }
+      ctx.restore();
+    }
+
+    /* hex 形式的 ping 超时倒计时（0xFF → 0x00） */
+    function drawPing(ctx, t, iso) {
+      var a0 = MV.clamp((t - t0 - 0.3) / 0.5, 0, 1) * (1 - iso * 0.9);
+      if (a0 <= 0.01) return;
+      var remain = MV.clamp((tIso - t) / (tIso - t0), 0, 1);
+      var hv = Math.floor(remain * 255);
+      var blink = (Math.floor(t * 8) % 4 === 0) ? 1 : 0.82;
+      MV.text(ctx, 'PING TIMEOUT 0x' + MV.hex(hv, 2), MV.CX, 146,
+        { size: 17, color: MV.C.cyan, alpha: MV.clamp(0.42 * a0 * blink, 0, 1) });
+    }
 
     function stepCount(t) {
       var c = 0;
@@ -450,6 +817,10 @@ window.MV = window.MV || {};
           ctx.restore();
         }
 
+        /* 信号强度衰减条 + hex ping 倒计时 */
+        drawSignalBar(ctx, t, step, iso);
+        drawPing(ctx, t, iso);
+
         /* 各步收敛的环：每句 “You have left” 向内缩一圈 */
         for (i = 0; i < step; i++) {
           var age = t - stepT[i];
@@ -457,6 +828,9 @@ window.MV = window.MV || {};
           var r = 420 - MV.easeOutCubic(MV.clamp(age / 2.0, 0, 1)) * 340;
           MV.ring(ctx, MV.CX, MV.CY, r, cold, 1.4, (1 - age / 2.4) * 0.3);
         }
+
+        /* 115.5+：逐步断裂的点状连接线 */
+        drawLink(ctx, t, iso);
 
         /* 漂离粒子 */
         drift.drawRect(ctx, cold, 0.5 * (1 - iso * 0.7));
@@ -485,6 +859,10 @@ window.MV = window.MV || {};
           ctx.fillRect(0, 0, MV.W, MV.H);
           ctx.restore();
           MV.text(ctx, 'ISOLATION', MV.CX, 250, { size: 20, color: cold, alpha: 0.4 * iso });
+          /* ISOLATION：仅保留一颗极慢漂移的冷光点 */
+          var isoDx = MV.CX + Math.sin(t * 0.07) * 170;
+          var isoDy = MV.CY + Math.cos(t * 0.05) * 100;
+          MV.drawMe(ctx, isoDx, isoDy, 2.2, 0.16 * iso, { glow: 0.35, tint: cold });
         }
       }
     };
@@ -505,6 +883,104 @@ window.MV = window.MV || {};
     var fs = new Float32Array(N), fr = new Float32Array(N), fvr = new Float32Array(N);
     var fn = 0;
 
+    /* ---------- 新增层：线框碎块 / 拖尾粒子 / hex 标签 / 引力井 ---------- */
+    var trail = new MV.Particles(200);
+    var SHARD_N = 11;
+    var shA = new Float32Array(SHARD_N), shR = new Float32Array(SHARD_N);
+    var shSp = new Float32Array(SHARD_N), shSz = new Float32Array(SHARD_N);
+    var shRot = new Float32Array(SHARD_N), shSide = new Float32Array(SHARD_N);
+    (function () {
+      for (var i = 0; i < SHARD_N; i++) {
+        shA[i] = MV.hash(i * 3.7 + 0.5) * TAU;
+        shR[i] = 300 + MV.hash(i * 7.1 + 2.3) * 360;
+        shSp[i] = 0.06 + MV.hash(i * 5.3 + 4.1) * 0.13;
+        shSz[i] = 26 + MV.hash(i * 9.9 + 6.7) * 40;
+        shRot[i] = MV.hash(i * 11.3 + 1.9) * TAU;
+        shSide[i] = 3 + (i % 3);
+      }
+    })();
+    var LAB_N = 8;
+    var labX = new Float32Array(LAB_N), labY = new Float32Array(LAB_N);
+    var labSp = new Float32Array(LAB_N), labPh = new Float32Array(LAB_N);
+    var labTxt = [];
+    (function () {
+      for (var i = 0; i < LAB_N; i++) {
+        labX[i] = 160 + MV.hash(i * 3.1 + 8.8) * 1600;
+        labY[i] = MV.hash(i * 7.7 + 3.3) * 1200;
+        labSp[i] = 14 + MV.hash(i * 5.9 + 2.2) * 26;
+        labPh[i] = MV.hash(i * 9.3 + 6.1) * TAU;
+        labTxt.push('0x' + MV.hex(Math.floor(MV.hash(i * 13.7 + 4.4) * 0x100000), 5));
+      }
+    })();
+    var tWell = 121.31;
+
+    /* 缓慢漂移/自转的线框碎块轮廓 */
+    function drawShards(ctx, t, alpha) {
+      if (alpha <= 0.01) return;
+      ctx.save();
+      ctx.strokeStyle = MV.rgba(MV.RGB.white, 0.22 * alpha);
+      ctx.lineWidth = 1.2;
+      for (var i = 0; i < SHARD_N; i++) {
+        var a = shA[i] + t * shSp[i];
+        var x = MV.CX + Math.cos(a) * shR[i];
+        var y = MV.CY + Math.sin(a) * shR[i] * 0.62;
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(shRot[i] + t * (0.16 + (i % 4) * 0.07));
+        MV.polyPath(ctx, 0, 0, shSz[i], shSide[i], 0);
+        ctx.stroke();
+        ctx.restore();
+      }
+      ctx.restore();
+    }
+
+    /* hex 碎片标签缓慢上浮 */
+    function drawLabels(ctx, t, alpha) {
+      if (alpha <= 0.01) return;
+      ctx.save();
+      ctx.font = '15px ' + MV.FONT_MONO;
+      ctx.fillStyle = MV.C.cyan;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      for (var i = 0; i < LAB_N; i++) {
+        var y = ((labY[i] - t * labSp[i]) % 1300 + 1300) % 1300 - 110;
+        ctx.globalAlpha = MV.clamp(0.20 * alpha * (0.6 + 0.4 * Math.sin(t * 1.4 + labPh[i])), 0, 0.25);
+        ctx.fillText(labTxt[i], labX[i] + Math.sin(t * 0.5 + labPh[i]) * 18, y);
+      }
+      ctx.restore();
+    }
+
+    /* 121.31-124.89：引力井同心环 + 加速内落点流 */
+    function drawWell(ctx, t) {
+      var wp = MV.clamp((t - tWell) / (tDis - tWell), 0, 1);
+      if (wp <= 0.001) return;
+      var fade = 1 - MV.clamp((t - tDis) / 0.9, 0, 1);
+      if (fade <= 0.01) return;
+      var i;
+      ctx.save();
+      for (i = 0; i < 5; i++) {
+        var r = (110 + i * 145 + Math.sin(t * 1.2 + i * 1.7) * 16) * (1 - 0.3 * wp);
+        ctx.strokeStyle = MV.rgba(MV.RGB.cyan, 0.13 * fade * (1 - i * 0.12));
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.arc(MV.CX, MV.CY, Math.max(r, 2), 0, TAU);
+        ctx.stroke();
+      }
+      ctx.restore();
+      ctx.save();
+      ctx.fillStyle = MV.RGB.cyan;
+      for (i = 0; i < 44; i++) {
+        var ph = i / 44;
+        var p = MV.clamp(wp * 1.35 - ph * 0.4, 0, 1);
+        if (p <= 0) continue;
+        var rr = (1 - p * p) * (520 + MV.hash(i * 3.9) * 240) + 24;
+        var aa = ph * TAU + p * 2.4 + t * 0.4;
+        ctx.globalAlpha = MV.clamp(0.20 * fade * (1 - p * 0.4), 0, 0.25);
+        ctx.fillRect(MV.CX + Math.cos(aa) * rr - 1.5, MV.CY + Math.sin(aa) * rr - 1.5, 3, 3);
+      }
+      ctx.restore();
+    }
+
     function burst(count, power, up) {
       for (var i = 0; i < count && fn < N; i++) {
         var a = MV.hash(fn * 13.7 + t0) * TAU;
@@ -523,9 +999,10 @@ window.MV = window.MV || {};
       meta: meta,
       enter: function (t) {
         fn = 0;
+        trail.clear();
         burst(64, 1, 30);   /* 入场：光点炸裂成 64 片 */
       },
-      exit: function () {},
+      exit: function () { trail.clear(); },
       update: function (t, dt, env, beat) {
         meta.grid = 0.04 * (1 - MV.clamp((t - tDis) / 1, 0, 1) * 0.6);
         /* “If I can erase...” 的口子：11 8.98~119.4 连续补喷 */
@@ -550,12 +1027,31 @@ window.MV = window.MV || {};
           fr[i] += fvr[i] * dt;
           if (fy[i] > MV.H + 30) { fy[i] = MV.H + 30; fvy[i] *= -0.12; }
         }
+        /* 碎屑拖尾粒子：从飞行碎片上采样其速度方向 */
+        var tdim = MV.clamp((t - tDis) / 1.0, 0, 1);
+        if (fn > 0 && tdim < 0.92) {
+          var rate = 26 + env.high * 26;
+          var tn = rate * dt;
+          var whole = Math.floor(tn);
+          if (Math.random() < tn - whole) whole++;
+          for (var s = 0; s < whole; s++) {
+            var di = Math.floor(MV.hash(Math.floor(t * 60) * 3.1 + s * 17.7) * fn) % fn;
+            trail.spawn(fx[di], fy[di],
+              fvx[di] * 0.22 + MV.hashS(di * 3.3 + s) * 10,
+              fvy[di] * 0.22 + MV.hashS(di * 5.1 + s) * 10,
+              0.3 + MV.hash(s * 7.7 + 1.1) * 0.4,
+              1.5 + MV.hash(s * 9.9 + 2.2) * 2, di);
+          }
+        }
+        trail.step(dt, null);
       },
       draw: function (ctx, t, env, beat) {
         var i;
         var dim = MV.clamp((t - tDis) / 1.0, 0, 1);
         var col = MV.desat(MV.RGB.cyan, dim * 0.55);
         var alpha = 1 - dim * 0.55;
+        /* 引力井（121.31+，绘于碎片之下） */
+        drawWell(ctx, t);
         /* 中心残影（碎裂的“我”） */
         var ghost = (1 - MV.clamp((t - t0) / 6, 0, 1)) * 0.5;
         if (ghost > 0.01) {
@@ -583,6 +1079,11 @@ window.MV = window.MV || {};
           ctx.restore();
         }
         ctx.restore();
+        /* 碎屑拖尾（速度方向短流线） */
+        trail.drawStreak(ctx, col, 0.42 * alpha, 0.03);
+        /* 旋转线框碎块 + 漂移 hex 标签 */
+        drawShards(ctx, t, alpha);
+        drawLabels(ctx, t, alpha);
         /* 顶部细提示线 */
         MV.line(ctx, 560, 96, 1360, 96, MV.C.cyan, 1, 0.10 + beat.pulse * 0.06);
       }
@@ -621,16 +1122,182 @@ window.MV = window.MV || {};
         alpha: 0.16 + MV.hash(b * 5.5) * 0.2
       });
     }
+    /* ---------- 新增层：非法解析树 / 沙箱计 / 警告三角 / 块损坏 / 角部虚线 ---------- */
+    var NT = 13;
+    var ndX = new Float32Array(NT), ndY = new Float32Array(NT);
+    (function () {
+      ndX[0] = MV.CX; ndY[0] = 246;
+      ndX[1] = MV.CX - 190; ndY[1] = 402;
+      ndX[2] = MV.CX + 190; ndY[2] = 402;
+      ndX[3] = MV.CX - 330; ndY[3] = 566;
+      ndX[4] = MV.CX - 110; ndY[4] = 566;
+      ndX[5] = MV.CX + 110; ndY[5] = 566;
+      ndX[6] = MV.CX + 330; ndY[6] = 566;
+      ndX[7] = MV.CX - 400; ndY[7] = 742;
+      ndX[8] = MV.CX - 240; ndY[8] = 742;
+      ndX[9] = MV.CX - 80; ndY[9] = 742;
+      ndX[10] = MV.CX + 80; ndY[10] = 742;
+      ndX[11] = MV.CX + 240; ndY[11] = 742;
+      ndX[12] = MV.CX + 400; ndY[12] = 742;
+    })();
+    var NE = 12;
+    var edA = new Int16Array([0, 0, 1, 1, 2, 2, 3, 4, 4, 5, 6, 6]);
+    var edB = new Int16Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    var ndLabel = [];
+    (function () {
+      for (var i = 0; i < NT; i++) {
+        ndLabel.push((i === 0) ? 'ROOT' : ('0x' + MV.hex(Math.floor(MV.hash(i * 7.7 + 3.1) * 0xffff), 4)));
+      }
+    })();
+    var DASH = [16, 10];
+    var lastCorrupt = -1, corruptIdx = -1, corruptT = -10;
+    var TRI = [
+      { x: 300, y: 268, s: 92, sp: 0.42, dir: 1, big: true },
+      { x: 1620, y: 812, s: 92, sp: -0.34, dir: 1, big: true },
+      { x: 1648, y: 236, s: 46, sp: 0.7, dir: -1, big: false },
+      { x: 272, y: 836, s: 46, sp: -0.6, dir: -1, big: false }
+    ];
+
+    /* 非法解析树：节点逐个生长（125.7 → 131.22） */
+    function drawParseTree(ctx, t) {
+      var p = MV.clamp((t - t0) / (tIllegal - t0), 0, 1);
+      if (p <= 0.001) return;
+      var i;
+      ctx.save();
+      ctx.strokeStyle = MV.rgba(MV.RGB.red, 0.38);
+      ctx.lineWidth = 1.3;
+      for (i = 0; i < NE; i++) {
+        var ci = edB[i];
+        var age = p - ci / (NT - 1);
+        if (age <= 0) continue;
+        var kk = MV.clamp(age * 9, 0, 1);
+        ctx.beginPath();
+        ctx.moveTo(ndX[edA[i]], ndY[edA[i]]);
+        ctx.lineTo(MV.lerp(ndX[edA[i]], ndX[ci], kk), MV.lerp(ndY[edA[i]], ndY[ci], kk));
+        ctx.stroke();
+      }
+      ctx.restore();
+      var newest = Math.floor(p * (NT - 1) + 0.0001);
+      for (i = 0; i < NT; i++) {
+        var age2 = p - i / (NT - 1);
+        if (age2 <= 0) continue;
+        var pulse = (i === newest) ? (1 - MV.clamp(age2 * 4, 0, 1)) * 0.5 : 0;
+        ctx.save();
+        ctx.strokeStyle = MV.rgba(MV.RGB.red, 0.42 + pulse * 0.4);
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        ctx.arc(ndX[i], ndY[i], (i === 0 ? 10 : 6) + pulse * 5, 0, TAU);
+        ctx.stroke();
+        ctx.restore();
+        if (i % 4 === 0) {
+          MV.text(ctx, ndLabel[i], ndX[i] + 16, ndY[i] + 4,
+            { size: 12, color: MV.C.red, alpha: 0.38, align: 'left' });
+        }
+      }
+    }
+
+    /* SANDBOX VIOLATION 计量条（与解析树同步充能） */
+    function drawSandbox(ctx, t, beat) {
+      var p = MV.clamp((t - t0) / (tIllegal - t0), 0, 1);
+      if (p <= 0.001) return;
+      var x0 = 560, y = 950, w = 800, h = 14, segs = 32;
+      var e = Math.pow(p, 1.5);
+      ctx.save();
+      ctx.strokeStyle = MV.rgba(MV.RGB.red, 0.3 + beat.pulse * 0.12);
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x0, y - h * 0.5, w, h);
+      ctx.fillStyle = MV.C.red;
+      var lit = e * segs;
+      var sw = (w - 4) / segs;
+      for (var i = 0; i < segs; i++) {
+        if (i >= lit) break;
+        ctx.globalAlpha = MV.clamp(0.14 + 0.08 * MV.hash(i * 2.9 + 4.4) + beat.pulse * 0.05, 0, 0.25);
+        ctx.fillRect(x0 + 2 + i * sw, y - h * 0.5 + 2, sw - 2, h - 4);
+      }
+      ctx.restore();
+      MV.text(ctx, 'SANDBOX VIOLATION', x0, y - 18, { size: 14, color: MV.C.red, alpha: 0.45, align: 'left' });
+      MV.text(ctx, ('00' + Math.floor(e * 100)).slice(-3) + '%', x0 + w, y - 18,
+        { size: 14, color: MV.C.red, alpha: 0.45, align: 'right' });
+    }
+
+    /* 旋转警告三角（左右各一对，大小两档） */
+    function drawWarnTri(ctx, t, alpha) {
+      if (alpha <= 0.01) return;
+      for (var i = 0; i < TRI.length; i++) {
+        var tr = TRI[i];
+        ctx.save();
+        ctx.translate(tr.x, tr.y);
+        ctx.rotate(t * tr.sp * tr.dir + i * 0.7);
+        ctx.strokeStyle = MV.rgba(MV.RGB.red, (tr.big ? 0.28 : 0.22) * alpha);
+        ctx.lineWidth = tr.big ? 2 : 1.3;
+        MV.polyPath(ctx, 0, 0, tr.s, 3, -Math.PI / 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(0, -tr.s * 0.34);
+        ctx.lineTo(0, tr.s * 0.06);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(0, tr.s * 0.26, tr.s * 0.055, 0, TAU);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    /* 节拍驱动的内容损坏方块（按 beat.idx 确定性取位） */
+    function drawCorruption(ctx, t) {
+      var age = t - corruptT;
+      if (age < 0 || age > 0.16) return;
+      var fade = 1 - age / 0.16;
+      ctx.save();
+      ctx.fillStyle = MV.C.red;
+      for (var j = 0; j < 6; j++) {
+        var seed = corruptIdx * 11.7 + j * 7.9;
+        ctx.globalAlpha = MV.clamp((0.10 + MV.hash(seed + 5.1) * 0.10) * fade, 0, 0.25);
+        ctx.fillRect(MV.hash(seed) * MV.W, MV.hash(seed + 1.3) * MV.H,
+          90 + MV.hash(seed + 2.7) * 320, 16 + MV.hash(seed + 3.9) * 70);
+      }
+      ctx.restore();
+    }
+
+    /* 四角红色虚线向巨 X 汇聚（131.22+） */
+    function drawConverge(ctx, t) {
+      var p = MV.clamp((t - tIllegal) / 0.8, 0, 1);
+      if (p <= 0.001 || t > tIllegal + 1.6) return;
+      var fade = 1 - MV.clamp((t - tIllegal - 1.0) / 0.6, 0, 1);
+      if (fade <= 0.01) return;
+      var e = MV.easeOutCubic(p);
+      var cx = MV.lerp(0, MV.CX, e), cy0 = MV.lerp(0, MV.CY, e);
+      var dx = MV.lerp(MV.W, MV.CX, e);
+      var dy = MV.lerp(MV.H, MV.CY, e);
+      ctx.save();
+      ctx.setLineDash(DASH);
+      ctx.strokeStyle = MV.rgba(MV.RGB.red, 0.4 * fade);
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, 0); ctx.lineTo(cx, cy0);
+      ctx.moveTo(MV.W, 0); ctx.lineTo(dx, cy0);
+      ctx.moveTo(0, MV.H); ctx.lineTo(cx, dy);
+      ctx.moveTo(MV.W, MV.H); ctx.lineTo(dx, dy);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     var xReveal1 = 0, xReveal2 = 0, xShaken = false;
 
     return {
       meta: meta,
-      enter: function () { xReveal1 = 0; xReveal2 = 0; xShaken = false; },
+      enter: function () { xReveal1 = 0; xReveal2 = 0; xShaken = false; lastCorrupt = -1; corruptT = -10; },
       exit: function () {},
       update: function (t, dt, env, beat) {
         var rp = MV.clamp((t - tIllegal) / 0.8, 0, 1);
         xReveal1 = rp;
         xReveal2 = MV.clamp((rp - 0.3) / 0.7, 0, 1);
+        /* 每个节拍触发一次确定性块损坏 */
+        if (beat.idx !== lastCorrupt) {
+          lastCorrupt = beat.idx;
+          corruptIdx = beat.idx;
+          corruptT = t;
+        }
         if (rp >= 1 && !xShaken) {
           xShaken = true;
           MV.FX.shake(24, 0.7);
@@ -656,6 +1323,12 @@ window.MV = window.MV || {};
         }
         ctx.stroke();
         ctx.restore();
+
+        /* 旋转警告三角 + 非法解析树 + 沙箱计量 + 块损坏 */
+        drawWarnTri(ctx, t, 1);
+        drawParseTree(ctx, t);
+        drawSandbox(ctx, t, beat);
+        drawCorruption(ctx, t);
 
         /* 错误雨：9 条横向滚动带 */
         ctx.save();
@@ -731,6 +1404,8 @@ window.MV = window.MV || {};
               { size: 40, color: MV.C.red, alpha: 0.85, glow: 26 });
           }
         }
+        /* 四角红色虚线向巨 X 汇聚 */
+        drawConverge(ctx, t);
         /* 角落小字 */
         MV.text(ctx, 'ERR 0x' + MV.hex(Math.floor(t * 733) & 0xffffff, 6), 120, MV.H - 70,
           { size: 16, color: MV.C.red, alpha: 0.4, align: 'left' });
@@ -796,6 +1471,157 @@ window.MV = window.MV || {};
         b1: pickBody(k, 1),
         b2: pickBody(k, 2)
       };
+    }
+
+    /* ---------- 新增层：钢琴琶音阶梯 / 数据线场 / 小节闪电 / 坍缩漩涡 ---------- */
+    var KEYS = 28, KEY_W = 20, KEY_GAP = 6;
+    var ROW_A_Y = 268, ROW_B_Y = 812;
+    var KEY_X0 = MV.CX - (KEYS * (KEY_W + KEY_GAP)) / 2;
+    var KEY_SPAN = KEYS * (KEY_W + KEY_GAP);
+    var PAT = new Int16Array([0, 2, 4, 7, 9, 12, 14, 16, 18, 21, 23, 25]);
+    var keyAlpha = new Float32Array(KEYS);
+    var keyLift = new Float32Array(KEYS);
+    var COL_B = MV.mix(MV.RGB.blue, MV.RGB.cyan, 0.35);
+    var DATA_N = 14;
+    var dataY = new Float32Array(DATA_N), dataPh = new Float32Array(DATA_N), dataSp = new Float32Array(DATA_N);
+    (function () {
+      for (var i = 0; i < DATA_N; i++) {
+        dataY[i] = 64 + i * 68;
+        dataPh[i] = MV.hash(i * 7.1 + 2.4) * 2600;
+        dataSp[i] = 60 + MV.hash(i * 3.7 + 5.9) * 140;
+      }
+    })();
+    var boltIdx = -1, boltT = -10;
+
+    /* 钢琴琶音阶梯：半拍游标推进，和弦音（0/4/7）依次点亮并上浮 */
+    function drawPiano(ctx, t, beat, col) {
+      var step = (beat.t1 - beat.t0) * 0.5;
+      var c = (t - t0) / step;
+      var base = Math.floor(c);
+      var i, j, s, o, age, pv;
+      keyAlpha.fill(0);
+      keyLift.fill(0);
+      for (s = base - 10; s <= base; s++) {
+        if (s < 0) continue;
+        age = (c - s) * step;
+        if (age > 1.5) continue;
+        var en = Math.exp(-age * 3.0);
+        pv = PAT[((s % PAT.length) + PAT.length) % PAT.length];
+        for (o = 0; o < 3; o++) {
+          var off = (o === 0) ? 0 : (o === 1 ? 4 : 7);
+          var ka = (pv + off) % KEYS;
+          var kb = KEYS - 1 - ((pv + off) % KEYS);
+          if (en > keyAlpha[ka]) { keyAlpha[ka] = en; keyLift[ka] = en; }
+          if (en > keyAlpha[kb]) { keyAlpha[kb] = en; keyLift[kb] = en; }
+        }
+      }
+      /* 键盘底线 + 分隔刻度 */
+      ctx.save();
+      ctx.strokeStyle = MV.rgba(col, 0.10);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(KEY_X0 - 16, ROW_A_Y - 20);
+      ctx.lineTo(KEY_X0 + KEY_SPAN + 16, ROW_A_Y - 20);
+      ctx.moveTo(KEY_X0 - 16, ROW_B_Y + 2);
+      ctx.lineTo(KEY_X0 + KEY_SPAN + 16, ROW_B_Y + 2);
+      for (j = 0; j <= KEYS; j++) {
+        var tx = KEY_X0 + j * (KEY_W + KEY_GAP) - KEY_GAP * 0.5;
+        ctx.moveTo(tx, ROW_A_Y - 25); ctx.lineTo(tx, ROW_A_Y - 15);
+        ctx.moveTo(tx, ROW_B_Y - 3); ctx.lineTo(tx, ROW_B_Y + 7);
+      }
+      ctx.stroke();
+      ctx.restore();
+      /* 上行（左→右升）/ 下行（右→左降）两组琴键 */
+      ctx.save();
+      ctx.fillStyle = MV.C.cyan;
+      for (j = 0; j < KEYS; j++) {
+        ctx.globalAlpha = MV.clamp(0.03 + keyAlpha[j] * 0.17, 0, 0.20);
+        ctx.fillRect(KEY_X0 + j * (KEY_W + KEY_GAP), ROW_A_Y - 20 - keyLift[j] * 12, KEY_W, 34);
+      }
+      ctx.fillStyle = MV.rgba(COL_B, 1);
+      for (j = 0; j < KEYS; j++) {
+        ctx.globalAlpha = MV.clamp(0.03 + keyAlpha[j] * 0.17, 0, 0.20);
+        ctx.fillRect(KEY_X0 + (KEYS - 1 - j) * (KEY_W + KEY_GAP), ROW_B_Y - 32 - keyLift[j] * 12, KEY_W, 34);
+      }
+      ctx.restore();
+    }
+
+    /* 缓慢流动的水平数据线场（alpha<=0.08） */
+    function drawDataLines(ctx, t, col) {
+      ctx.save();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = MV.rgba(col, 0.05);
+      ctx.beginPath();
+      for (var i = 0; i < DATA_N; i++) {
+        ctx.moveTo(0, dataY[i]);
+        ctx.lineTo(MV.W, dataY[i]);
+      }
+      ctx.stroke();
+      ctx.strokeStyle = MV.rgba(col, 0.08);
+      ctx.beginPath();
+      for (var j = 0; j < DATA_N; j++) {
+        var hx = ((t * dataSp[j] + dataPh[j]) % (MV.W + 520)) - 260;
+        ctx.moveTo(hx, dataY[j]);
+        ctx.lineTo(hx + 170, dataY[j]);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    /* 小节线确定性闪电折线 */
+    function drawBolt(ctx, t) {
+      var age = t - boltT;
+      if (boltIdx < 0 || age < 0 || age > 0.24) return;
+      var fade = 1 - age / 0.24;
+      var x = MV.hash(boltIdx * 7.7 + 2.2) * (MV.W - 500) + 250;
+      var y = 40;
+      ctx.save();
+      ctx.strokeStyle = MV.rgba(MV.RGB.white, 0.3 * fade);
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      for (var k = 0; k < 9; k++) {
+        x += MV.hashS(boltIdx * 13.1 + k * 5.7) * 95;
+        y += 48 + MV.hash(boltIdx * 3.9 + k * 7.3) * 62;
+        ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    /* 146.2-147.66：坍缩尾段的旋涡环与内吸流线（绘于弹窗之下） */
+    function drawVortex(ctx, t, col) {
+      var vp = MV.clamp((t - 146.2) / (T1 - 146.2), 0, 1);
+      if (vp <= 0.001) return;
+      var fade = 1 - MV.clamp((vp - 0.85) / 0.15, 0, 1);
+      if (fade <= 0.01) return;
+      var i;
+      ctx.save();
+      for (i = 0; i < 8; i++) {
+        var p = MV.clamp(vp * 1.5 - i * 0.09, 0, 1);
+        if (p <= 0) continue;
+        var r = (1 - p) * (740 - i * 38) + 26;
+        ctx.strokeStyle = MV.rgba(col, 0.16 * (1 - p * 0.6) * fade);
+        ctx.lineWidth = 1.4;
+        MV.polyPath(ctx, MV.CX, MV.CY, r, 6, -p * 3 + i * 0.5);
+        ctx.stroke();
+      }
+      ctx.restore();
+      ctx.save();
+      ctx.strokeStyle = MV.rgba(MV.RGB.white, 0.10 * fade);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (i = 0; i < 26; i++) {
+        var ph = i / 26;
+        var pp = MV.clamp(vp * 1.6 - ph * 0.5, 0, 1);
+        var rr = (1 - pp * pp) * 900 + 30;
+        var aa = ph * TAU + vp * 6;
+        ctx.moveTo(MV.CX + Math.cos(aa) * rr, MV.CY + Math.sin(aa) * rr);
+        ctx.lineTo(MV.CX + Math.cos(aa + 0.06) * (rr - 70 * pp - 20),
+          MV.CY + Math.sin(aa + 0.06) * (rr - 70 * pp - 20));
+      }
+      ctx.stroke();
+      ctx.restore();
     }
 
     /* 单个弹窗：线框窗口 + 弹入过冲 + 生成瞬间闪烁 + 末尾缩退汇向中心 */
@@ -876,7 +1702,7 @@ window.MV = window.MV || {};
 
     return {
       meta: meta,
-      enter: function () { dialogs.length = 0; idx = 0; lastBeat = -1; },
+      enter: function () { dialogs.length = 0; idx = 0; lastBeat = -1; boltIdx = -1; boltT = -10; },
       exit: function () { dialogs.length = 0; idx = 0; },
       update: function (t, dt, env, beat) {
         /* 回退守卫：时间跳到过去时清空并按需重建（弹窗完全由 k 决定，重建结果一致） */
@@ -890,6 +1716,9 @@ window.MV = window.MV || {};
           lastBeat = beat.idx;
           if (beat.isBar) {
             MV.FX.flash(MV.RGB.cyan, 0.06 + env.high * 0.08, 0.3);
+            /* 小节线闪电：确定性折线闪 0.24s */
+            boltIdx = beat.idx;
+            boltT = t;
           }
         }
       },
@@ -929,6 +1758,15 @@ window.MV = window.MV || {};
         }
         ctx.stroke();
         ctx.restore();
+
+        /* 流动数据线场（背景，alpha<=0.08） */
+        drawDataLines(ctx, t, col);
+        /* 钢琴琶音阶梯（本段器乐突破的视觉签名，绘于弹窗之下） */
+        drawPiano(ctx, t, beat, col);
+        /* 小节闪电折线 */
+        drawBolt(ctx, t);
+        /* 坍缩尾段漩涡环 */
+        drawVortex(ctx, t, col);
 
         /* 级联错误弹窗：按生成顺序绘制（后生成的在最上层） */
         for (i = 0; i < dialogs.length; i++) drawDialog(ctx, dialogs[i], t, col);
