@@ -1237,31 +1237,44 @@ window.MV = window.MV || {};
     }
 
     /* ============================================================
-     * 番茄红素（lycopene）结构式：长共轭多烯链 + 两端简化六元环
+     * 番茄红素（lycopene）结构式 —— 开链共轭多烯（照真实结构：两端均无环）
+     * 局部坐标：原点 = 主链左起首顶点，+x 右、+y 下
      * 几何在工厂期一次性算好，绘制完全时间驱动（预览/寻址安全）
      * ============================================================ */
-    var LYCO_Y = 700;                    /* 链中轴（位于生物线稿之下、底部歌词区之上） */
-    var LYCO_AMP = 26;                   /* 锯齿振幅 */
-    var LYCO_R = 34;                     /* 端环半径 */
-    var LYCO_N = 12;                     /* 锯齿段数 */
-    var LYCO_LCX = 444, LYCO_RCX = 1476; /* 端环圆心（关于 CX 对称） */
-    var LYCO_X0 = LYCO_LCX + LYCO_R, LYCO_X1 = LYCO_RCX - LYCO_R;
-    var LYCO_STEP = (LYCO_X1 - LYCO_X0) / LYCO_N;
-    /* 链顶点：首尾回到中轴（端部各半段），中间上下交替 */
+    var LYCO_X = 480, LYCO_Y = 585;      /* 原点世界坐标（主链左端顶点） */
+    var LYCO_DX = 46, LYCO_AMP = 26, LYCO_N = 22;
+    function lycoWP(px, py) { return [LYCO_X + px, LYCO_Y + py]; }
+    /* 主链 22 个顶点：偶数下标 +26（下）、奇数下标 -26（上） */
     var lycoPts = (function () {
-      var pts = [[LYCO_X0, LYCO_Y]];
-      for (var k = 1; k < LYCO_N; k++) {
-        pts.push([LYCO_X0 + LYCO_STEP * k, LYCO_Y + (k % 2 ? -LYCO_AMP : LYCO_AMP)]);
+      var a = [];
+      for (var i = 0; i < LYCO_N; i++) {
+        a.push(lycoWP(i * LYCO_DX, (i % 2 === 0) ? LYCO_AMP : -LYCO_AMP));
       }
-      pts.push([LYCO_X1, LYCO_Y]);
-      return pts;
+      return a;
     })();
-    /* 各顶点累计弧长（双键刻度与揭示进度同步用） */
+    /* 左端下垂折链（全单键）：V0→A1→A2→A3→A4→A5，末端甲基略短 */
+    var lycoLeft = [
+      lycoWP(-30, 70), lycoWP(36, 112), lycoWP(36, 176), lycoWP(-30, 218), lycoWP(-56, 236)
+    ];
+    var lycoBranch = lycoWP(-6, 112);          /* A2 向左的甲基支线（长 42） */
+    var lycoR1 = lycoWP(996, -70), lycoR2 = lycoWP(996, -128);
+    var lycoR3 = lycoWP(962, -162), lycoR4 = lycoWP(1030, -162);
+    /* 主链甲基支线：顶点下标 + 方向（-1 上 / +1 下），长 32px */
+    var lycoMethyls = [[2, -1], [6, -1], [10, 1], [14, 1], [18, -1]];
+    /* 揭示主线：左端甲基末端 → 折链向上 → 主链向右 → 右端 R1/R2（整体左→右） */
+    var lycoSpine = (function () {
+      var p = [], k;
+      for (k = lycoLeft.length - 1; k >= 0; k--) p.push(lycoLeft[k]);  /* A5…A1 */
+      for (k = 0; k < LYCO_N; k++) p.push(lycoPts[k]);                 /* V0…V21 */
+      p.push(lycoR1); p.push(lycoR2);                                  /* R1→R2 */
+      return p;
+    })();
+    /* 主线累计弧长（支线/双键随笔头出现）；索引约定：0..4 = A5..A1，5..26 = V0..V21 */
     var lycoCum = (function () {
       var cum = [0], L = 0;
-      for (var k = 1; k < lycoPts.length; k++) {
-        var dx = lycoPts[k][0] - lycoPts[k - 1][0];
-        var dy = lycoPts[k][1] - lycoPts[k - 1][1];
+      for (var k = 1; k < lycoSpine.length; k++) {
+        var dx = lycoSpine[k][0] - lycoSpine[k - 1][0];
+        var dy = lycoSpine[k][1] - lycoSpine[k - 1][1];
         L += Math.sqrt(dx * dx + dy * dy);
         cum.push(L);
       }
@@ -1269,72 +1282,38 @@ window.MV = window.MV || {};
     })();
     var LYCO_LEN = lycoCum[lycoCum.length - 1];
 
-    function lycoPath(c) {
-      c.moveTo(lycoPts[0][0], lycoPts[0][1]);
-      for (var k = 1; k < lycoPts.length; k++) c.lineTo(lycoPts[k][0], lycoPts[k][1]);
+    function lycoSpinePath(c) {
+      c.moveTo(lycoSpine[0][0], lycoSpine[0][1]);
+      for (var k = 1; k < lycoSpine.length; k++) c.lineTo(lycoSpine[k][0], lycoSpine[k][1]);
     }
 
-    /* 上行锯齿段的内侧平行短线（双键标记，偏移 6px、长度 60%） */
-    function lycoBond(ctx, j, alpha) {
-      var A = lycoPts[j], B = lycoPts[j + 1];
+    /* 单键短线段（甲基支线用） */
+    function lycoSeg(ctx, A, B, alpha) {
+      if (alpha <= 0.01) return;
+      ctx.save();
+      ctx.strokeStyle = MV.rgba(warm, alpha);
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(A[0], A[1]);
+      ctx.lineTo(B[0], B[1]);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    /* 主链双键：内侧平行短线（偏移 6px，两端各缩 12%） */
+    function lycoDouble(ctx, A, B, alpha) {
       var dx = B[0] - A[0], dy = B[1] - A[1];
       var l = Math.sqrt(dx * dx + dy * dy);
       var ux = dx / l, uy = dy / l;
       var nx = -uy, ny = ux;
-      if (ny < 0) { nx = -nx; ny = -ny; }     /* 刻度一律落在链的内侧 */
-      var ox = A[0] + nx * 6 + ux * l * 0.2, oy = A[1] + ny * 6 + uy * l * 0.2;
+      if (ny < 0) { nx = -nx; ny = -ny; }     /* 一律落在链的内侧 */
+      var t0 = 0.12, t1 = 0.88;
       ctx.save();
       ctx.strokeStyle = MV.rgba(warm, alpha);
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.moveTo(ox, oy);
-      ctx.lineTo(ox + ux * l * 0.6, oy + uy * l * 0.6);
-      ctx.stroke();
-      ctx.restore();
-    }
-
-    /* 六元环路径：顶点含 0°/180°，与链端精确衔接 */
-    function lycoRingPath(cx, cy, r) {
-      return function (c) {
-        for (var k = 0; k < 6; k++) {
-          var a = k * TAU / 6;
-          var px = cx + Math.cos(a) * r, py = cy + Math.sin(a) * r;
-          if (k === 0) c.moveTo(px, py); else c.lineTo(px, py);
-        }
-        c.closePath();
-      };
-    }
-
-    /* 环内双键刻度：第 i 条边向内偏移 5px 的平行短线 */
-    function lycoRingBond(ctx, cx, cy, r, i, alpha) {
-      var a0 = i * TAU / 6, a1 = (i + 1) * TAU / 6;
-      var ax = cx + Math.cos(a0) * r, ay = cy + Math.sin(a0) * r;
-      var bx = cx + Math.cos(a1) * r, by = cy + Math.sin(a1) * r;
-      var mx = (ax + bx) * 0.5, my = (ay + by) * 0.5;
-      var nx = cx - mx, ny = cy - my;
-      var nl = Math.max(Math.sqrt(nx * nx + ny * ny), 1e-3);
-      nx /= nl; ny /= nl;
-      var tx = (bx - ax) * 0.30, ty = (by - ay) * 0.30;
-      ctx.save();
-      ctx.strokeStyle = MV.rgba(warm, alpha);
-      ctx.lineWidth = 1.8;
-      ctx.beginPath();
-      ctx.moveTo(mx + nx * 5 - tx, my + ny * 5 - ty);
-      ctx.lineTo(mx + nx * 5 + tx, my + ny * 5 + ty);
-      ctx.stroke();
-      ctx.restore();
-    }
-
-    /* 甲基支线：从第 i 个顶点沿半径向外 18px */
-    function lycoMethyl(ctx, cx, cy, r, i, alpha) {
-      var a = i * TAU / 6;
-      var ax = cx + Math.cos(a) * r, ay = cy + Math.sin(a) * r;
-      ctx.save();
-      ctx.strokeStyle = MV.rgba(warm, alpha);
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(ax, ay);
-      ctx.lineTo(ax + Math.cos(a) * 18, ay + Math.sin(a) * 18);
+      ctx.moveTo(A[0] + nx * 6 + ux * l * t0, A[1] + ny * 6 + uy * l * t0);
+      ctx.lineTo(A[0] + nx * 6 + ux * l * t1, A[1] + ny * 6 + uy * l * t1);
       ctx.stroke();
       ctx.restore();
     }
@@ -1445,41 +1424,35 @@ window.MV = window.MV || {};
 
         /* ---------- 番茄红素结构式：献给“番茄的抗氧化物” ---------- */
         var tLyco = tAnti - 0.5;                              /* 略提前起笔，贴住歌词节奏 */
-        var lp = MV.clamp((t - tLyco) / 1.6, 0, 1);           /* 左→右描绘进度 */
+        var lp = MV.clamp((t - tLyco) / 1.6, 0, 1);           /* 描绘进度：左端 → 主链 → 右端 */
         var lfade = MV.clamp(1 - (t - 85.0) / 0.7, 0, 1);     /* 保持至 85.0s，再 0.7s 淡出 */
         if (lp > 0 && lfade > 0.01) {
           var lalpha = 0.55 * lfade * (0.88 + 0.12 * beat.pulse);  /* 轻微随拍呼吸 */
           var lw = MV.rgba(warm, 1);
-          /* 左端环 → 长链 → 双键标记 → 右端环，依次揭出 */
-          var rpL = MV.clamp(lp / 0.18, 0, 1);
-          MV.reveal(ctx, lycoRingPath(LYCO_LCX, LYCO_Y, LYCO_R), 6 * LYCO_R, rpL, lw, 2, lalpha);
-          var rpT = MV.clamp((rpL - 0.6) / 0.4, 0, 1);
-          if (rpT > 0.01) {
-            lycoRingBond(ctx, LYCO_LCX, LYCO_Y, LYCO_R, 1, lalpha * rpT);
-            lycoRingBond(ctx, LYCO_LCX, LYCO_Y, LYCO_R, 4, lalpha * rpT);
-            lycoMethyl(ctx, LYCO_LCX, LYCO_Y, LYCO_R, 1, lalpha * rpT);
-            lycoMethyl(ctx, LYCO_LCX, LYCO_Y, LYCO_R, 5, lalpha * rpT);
-          }
-          var cp2 = MV.clamp((lp - 0.10) / 0.72, 0, 1);
-          if (cp2 > 0) {
-            MV.reveal(ctx, lycoPath, LYCO_LEN + 20, cp2, lw, 2, lalpha);
-            /* 双键标记随链头同步出现（仅上行锯齿段） */
-            for (var j = 0; j < LYCO_N; j += 2) {
-              var f = lycoCum[j] / LYCO_LEN;
-              var tp = MV.clamp((cp2 - f) / 0.05, 0, 1);
-              if (tp > 0.01) lycoBond(ctx, j, lalpha * tp);
+          /* 主线（左端折链 + 主链 + 右端上行段）随笔头一次性揭出 */
+          MV.reveal(ctx, lycoSpinePath, LYCO_LEN + 20, lp, lw, 2, lalpha);
+          /* 左端甲基支线：笔头经过 A2 后出现 */
+          var bp = MV.clamp((lp - lycoCum[3] / LYCO_LEN) / 0.04, 0, 1);
+          if (bp > 0.01) lycoSeg(ctx, lycoLeft[1], lycoBranch, lalpha * bp);
+          /* 主链甲基支线（随笔头出现） */
+          for (var mj = 0; mj < lycoMethyls.length; mj++) {
+            var mi = lycoMethyls[mj][0], mdir = lycoMethyls[mj][1];
+            var mp = MV.clamp((lp - lycoCum[5 + mi] / LYCO_LEN) / 0.04, 0, 1);
+            if (mp > 0.01) {
+              lycoSeg(ctx, lycoPts[mi], [lycoPts[mi][0], lycoPts[mi][1] + mdir * 32], lalpha * mp);
             }
           }
-          var rpR = MV.clamp((lp - 0.82) / 0.18, 0, 1);
-          if (rpR > 0) {
-            MV.reveal(ctx, lycoRingPath(LYCO_RCX, LYCO_Y, LYCO_R), 6 * LYCO_R, rpR, lw, 2, lalpha);
-            var rpT2 = MV.clamp((rpR - 0.6) / 0.4, 0, 1);
-            if (rpT2 > 0.01) {
-              lycoRingBond(ctx, LYCO_RCX, LYCO_Y, LYCO_R, 1, lalpha * rpT2);
-              lycoRingBond(ctx, LYCO_RCX, LYCO_Y, LYCO_R, 4, lalpha * rpT2);
-              lycoMethyl(ctx, LYCO_RCX, LYCO_Y, LYCO_R, 1, lalpha * rpT2);
-              lycoMethyl(ctx, LYCO_RCX, LYCO_Y, LYCO_R, 5, lalpha * rpT2);
-            }
+          /* 主链双键：偶数段内侧平行短线（共 11 条） */
+          for (var si = 0; si < LYCO_N - 1; si += 2) {
+            var sp = MV.clamp((lp - lycoCum[5 + si] / LYCO_LEN) / 0.04, 0, 1);
+            if (sp > 0.01) lycoDouble(ctx, lycoPts[si], lycoPts[si + 1], lalpha * sp);
+          }
+          /* 右端：竖直双键的平行线 + Y 形两个甲基（C(CH3)2 头） */
+          var yp = MV.clamp((lp - 0.94) / 0.06, 0, 1);
+          if (yp > 0.01) {
+            lycoSeg(ctx, [lycoR1[0] - 6, lycoR1[1]], [lycoR2[0] - 6, lycoR2[1]], lalpha * yp);
+            lycoSeg(ctx, lycoR2, lycoR3, lalpha * yp);
+            lycoSeg(ctx, lycoR2, lycoR4, lalpha * yp);
           }
           /* 名称 / 分子式 */
           var capA = MV.clamp((lp - 0.85) / 0.15, 0, 1) * lfade;
